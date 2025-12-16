@@ -43,9 +43,9 @@ function nowMs(){ return Date.now(); }
 
 // ---------- Game config (server truth) ----------
 const CFG = {
-  w: 1200,
-  h: 700,
-  pad: 55,
+  w: 960,
+  h: 540,
+  pad: 44,
 
   carR: 18,
   ballR: 16,
@@ -61,8 +61,8 @@ const CFG = {
   tickHz: 60,
   snapHz: 20,
 
-  goalW: 18,
-  goalH: 150
+  goalW: 22,
+  goalH: 140
 };
 
 // ---------- Room state ----------
