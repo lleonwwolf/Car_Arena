@@ -8,7 +8,7 @@ const server = http.createServer((req, res) => {
   res.end("OK");
 });
 
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, perMessageDeflate: false });
 
 // ---------- Helpers ----------
 function send(ws, obj) {
@@ -62,7 +62,10 @@ const CFG = {
   snapHz: 20,
 
   goalW: 22,
-  goalH: 140
+  goalH: 140,
+  // aliases (client uses goalDepth + goalWidth)
+  goalDepth: 22,
+  goalWidth: 140
 };
 
 // ---------- Room state ----------
@@ -89,6 +92,10 @@ function createRoom() {
     ball: { p: new Vec(CFG.w/2, CFG.h/2), v: new Vec(0,0) },
 
     lastTick: nowMs(),
+
+    // fixed-step accumulator
+    acc: 0,
+
     lastSnap: 0
   };
   rooms.set(code, room);
@@ -137,15 +144,15 @@ function goalCheck(room){
   const b = room.ball.p;
   const gxL = CFG.pad;
   const gxR = CFG.w - CFG.pad;
-  const top = (CFG.h/2) - (CFG.goalH/2);
-  const bot = (CFG.h/2) + (CFG.goalH/2);
+  const top = (CFG.h/2) - (CFG.goalWidth/2);
+  const bot = (CFG.h/2) + (CFG.goalWidth/2);
 
   if (b.y > top && b.y < bot){
-    if (b.x < gxL - CFG.goalW){
+    if (b.x < gxL - CFG.goalDepth){
       room.score[1] += 1; // right player scored
       return 1;
     }
-    if (b.x > gxR + CFG.goalW){
+    if (b.x > gxR + CFG.goalDepth){
       room.score[0] += 1; // left player scored
       return 0;
     }
@@ -183,8 +190,15 @@ function stepRoom(room, dt){
     car.p.add(car.v.clone().mul(dt * CFG.tickHz));
 
     // walls
-    car.p.x = clamp(car.p.x, CFG.pad + CFG.carR, CFG.w - CFG.pad - CFG.carR);
-    car.p.y = clamp(car.p.y, CFG.pad + CFG.carR, CFG.h - CFG.pad - CFG.carR);
+    const goalTopC = (CFG.h/2) - (CFG.goalWidth/2);
+const goalBotC = (CFG.h/2) + (CFG.goalWidth/2);
+const inMouthC = (car.p.y > goalTopC && car.p.y < goalBotC);
+
+const minCarX = inMouthC ? (CFG.pad - CFG.goalDepth + CFG.carR) : (CFG.pad + CFG.carR);
+const maxCarX = inMouthC ? (CFG.w - CFG.pad + CFG.goalDepth - CFG.carR) : (CFG.w - CFG.pad - CFG.carR);
+
+car.p.x = clamp(car.p.x, minCarX, maxCarX);
+car.p.y = clamp(car.p.y, CFG.pad + CFG.carR, CFG.h - CFG.pad - CFG.carR);
   }
 
   // ball
@@ -198,8 +212,20 @@ function stepRoom(room, dt){
   const minY = CFG.pad + CFG.ballR;
   const maxY = CFG.h - CFG.pad - CFG.ballR;
 
+  const goalTop = (CFG.h/2) - (CFG.goalWidth/2);
+const goalBot = (CFG.h/2) + (CFG.goalWidth/2);
+const inGoalMouth = (ball.p.y > goalTop && ball.p.y < goalBot);
+
+// left/right walls: open inside goal mouth, but keep a back wall (goal depth)
+if (!inGoalMouth){
   if (ball.p.x < minX){ ball.p.x = minX; ball.v.x *= -CFG.wallBounce; }
   if (ball.p.x > maxX){ ball.p.x = maxX; ball.v.x *= -CFG.wallBounce; }
+} else {
+  const leftBack  = (CFG.pad - CFG.goalDepth) + CFG.ballR;
+  const rightBack = (CFG.w - CFG.pad + CFG.goalDepth) - CFG.ballR;
+  if (ball.p.x < leftBack){ ball.p.x = leftBack; ball.v.x *= -CFG.wallBounce; }
+  if (ball.p.x > rightBack){ ball.p.x = rightBack; ball.v.x *= -CFG.wallBounce; }
+}
   if (ball.p.y < minY){ ball.p.y = minY; ball.v.y *= -CFG.wallBounce; }
   if (ball.p.y > maxY){ ball.p.y = maxY; ball.v.y *= -CFG.wallBounce; }
 
@@ -239,7 +265,10 @@ function snapshot(room){
 }
 
 function broadcastRoom(room, obj){
-  for (const ws of room.clients) send(ws, obj);
+  const msg = (typeof obj === 'string') ? obj : JSON.stringify(obj);
+  for (const ws of room.clients){
+    if (ws.readyState === 1) ws.send(msg);
+  }
 }
 
 // ---------- Networking ----------
@@ -332,13 +361,24 @@ setInterval(() => {
 
 // game loop: tick all rooms
 let last = nowMs();
+const FIXED_STEP = 1 / CFG.tickHz;
+
 setInterval(() => {
   const t = nowMs();
-  const dt = (t - last) / 1000;
+  const frameDt = Math.min(0.05, (t - last) / 1000);
   last = t;
 
   for (const room of rooms.values()){
-    stepRoom(room, dt);
+    room.acc = (room.acc || 0) + frameDt;
+
+    // avoid spiral of death on lag
+    let steps = 0;
+    while (room.acc >= FIXED_STEP && steps < 6){
+      stepRoom(room, FIXED_STEP);
+      room.acc -= FIXED_STEP;
+      steps++;
+    }
+    if (steps >= 6) room.acc = 0;
 
     const snapEvery = 1000 / CFG.snapHz;
     if (t - room.lastSnap >= snapEvery){
@@ -348,4 +388,4 @@ setInterval(() => {
   }
 }, 1000 / CFG.tickHz);
 
-server.listen(PORT, () => console.log("Server on", PORT));
+server.listen(PORT, () => console.log("Server on", PORT));(PORT, () => console.log("Server on", PORT));
