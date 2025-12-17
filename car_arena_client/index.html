@@ -254,7 +254,7 @@
             NET.seq++;
             const input = netLocalInput();
             wsSend({ type:'input', input:{...input, seq: NET.seq }});
-        }, 55); // ~30 Hz
+        }, 66); // ~30 Hz
     }
 
     function applyServerState(msg){
