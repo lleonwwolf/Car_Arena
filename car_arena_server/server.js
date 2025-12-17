@@ -65,7 +65,7 @@ const CFG = {
 
   kick: 0.75, // impulse scale on car-ball collision
   tickHz: 60,
-  snapHz: 40,
+  snapHz: 60,
 
   goalW: 22,
   goalH: 140
