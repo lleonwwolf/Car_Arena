@@ -47,8 +47,8 @@ const CFG = {
   carR: 18,
   ballR: 16,
 
-  w: 960+38,
-  h: 540+38,
+  w: 960,
+  h: 540,
   pad: 44,
 
   carAccel: 0.62,
@@ -207,8 +207,8 @@ function stepRoom(room, dt){
     car.p.add(car.v.clone().mul(dt * CFG.tickHz));
 
     // walls
-    car.p.x = clamp(car.p.x, CFG.pad + CFG.carR, CFG.w - CFG.pad - CFG.carR);
-    car.p.y = clamp(car.p.y, CFG.pad + CFG.carR, CFG.h - CFG.pad - CFG.carR);
+    car.p.x = clamp(car.p.x, CFG.pad + CFG.carR, CFG.w - CFG.pad - CFG.carR+20);
+    car.p.y = clamp(car.p.y, CFG.pad + CFG.carR, CFG.h - CFG.pad - CFG.carR+20);
   }
 
   // ball
