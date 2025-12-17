@@ -221,8 +221,8 @@ function stepRoom(room, dt){
   const minY = CFG.pad + CFG.ballR;
   const maxY = CFG.h - CFG.pad - CFG.ballR;
 
-  if (ball.p.x < minX && (ball.p.y <(CFG.h/2) - (CFG.goalH/2) && ball.p.y >(CFG.h/2) + (CFG.goalH/2))){ ball.p.x = minX; ball.v.x *= -CFG.wallBounce; }
-  if (ball.p.x > maxX && (ball.p.y <(CFG.h/2) - (CFG.goalH/2) && ball.p.y >(CFG.h/2) + (CFG.goalH/2))){ ball.p.x = maxX; ball.v.x *= -CFG.wallBounce; }
+  if (ball.p.x < minX && (ball.p.y <(CFG.h/2) - (CFG.goalH/2) || ball.p.y >(CFG.h/2) + (CFG.goalH/2))){ ball.p.x = minX; ball.v.x *= -CFG.wallBounce; }
+  if (ball.p.x > maxX && (ball.p.y <(CFG.h/2) - (CFG.goalH/2) || ball.p.y >(CFG.h/2) + (CFG.goalH/2))){ ball.p.x = maxX; ball.v.x *= -CFG.wallBounce; }
   if (ball.p.y < minY){ ball.p.y = minY; ball.v.y *= -CFG.wallBounce; }
   if (ball.p.y > maxY){ ball.p.y = maxY; ball.v.y *= -CFG.wallBounce; }
 
