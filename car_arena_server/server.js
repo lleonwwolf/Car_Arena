@@ -43,12 +43,13 @@ function nowMs(){ return Date.now(); }
 
 // ---------- Game config (server truth) ----------
 const CFG = {
-  w: 960,
-  h: 540,
-  pad: 44,
 
   carR: 18,
   ballR: 16,
+
+  w: 960+carR*2,
+  h: 540+carR*2,
+  pad: 44,
 
   carAccel: 0.62,
   carMaxV: 8.0,
