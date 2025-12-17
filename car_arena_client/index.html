@@ -51,25 +51,18 @@
 <div id="ui">
     <div class="card">
         <h1>Car Ball Arena</h1>
-        <p>Steuerung ist jetzt <b>direkt (oben/unten/links/rechts)</b> – kein Drehen. Boost funktioniert mit Energie-Anzeige.</p>
         <div class="row">
             <button id="pvp" class="primary">Spieler vs Spieler</button>
             <button id="pve">Spieler vs Bot</button>
         </div>
         <div class="divider"></div>
         <h2 style="margin:14px 0 8px; font-size:16px; font-weight:800;">Online (Server‑Authoritative)</h2>
-        <p style="margin:0 0 10px; color:var(--muted); font-size:13px;">
-            Startet ein Match über einen Room‑Code. (Kein WebRTC/ICE mehr.)
-        </p>
         <div class="row" style="gap:10px; flex-wrap:wrap;">
             <button id="onHost" class="primary">Online Host</button>
             <input id="onCode" class="input" placeholder="ROOM CODE" maxlength="6" style="width:140px; text-transform:uppercase;" />
             <button id="onJoin">Join</button>
         </div>
         <p id="onStatus" style="margin-top:10px; color:var(--muted); font-size:13px;">Status: Offline</p>
-        <p style="margin-top:6px; color:var(--muted); font-size:12px;">
-            Hinweis: In <b>WS_URL</b> im Code musst du deine Render‑URL eintragen (wss://…).
-        </p>
 
         <p style="margin-top:12px; color:var(--muted)">
             <b>Spieler 1</b>: <span class="kbd">W</span> hoch · <span class="kbd">S</span> runter · <span class="kbd">A</span> links · <span class="kbd">D</span> rechts · <span class="kbd">Space</span> Boost
@@ -140,7 +133,7 @@
     };
     // ---------- Online (Server-Authoritative via WebSocket) ----------
     // Trage hier deine Render-URL ein (wss://...):
-    const WS_URL = "wss://car-arena.onrender.com";
+    const WS_URL = "wss://cararena-production.up.railway.app/";
 
     const NET = {
         ws: null,
@@ -149,8 +142,6 @@
         playerIndex: null,
         lastState: null,
         lastStateAt: 0,
-        serverTimeOffset: 0,
-        stateBuf: [],
         sendTimer: null,
         seq: 0,
     };
@@ -177,8 +168,6 @@
         NET.sendTimer = null;
         NET.connected = false;
         NET.lastState = null;
-        NET.stateBuf = [];
-        NET.serverTimeOffset = 0;
         NET.roomCode = "";
         NET.playerIndex = null;
         if (NET.ws){
@@ -223,7 +212,6 @@
                     NET.roomCode = msg.code;
                     NET.playerIndex = msg.playerIndex;
                     NET.lastState = null;
-                    NET.stateBuf = [];
                     NET.seq = 0;
                     mode = 'online';
                     startOnline();
@@ -232,7 +220,6 @@
                     NET.roomCode = msg.code;
                     NET.playerIndex = msg.playerIndex;
                     NET.lastState = null;
-                    NET.stateBuf = [];
                     NET.seq = 0;
                     mode = 'online';
                     startOnline();
@@ -242,14 +229,6 @@
                 } else if (msg.type === 'state'){
                     NET.lastState = msg;
                     NET.lastStateAt = performance.now();
-
-                    // Map server time (Date.now on server) to local Date.now (smoothly).
-                    const off = (msg.t || Date.now()) - Date.now();
-                    NET.serverTimeOffset = (NET.serverTimeOffset || 0) * 0.9 + off * 0.1;
-
-                    // Keep a small buffer for interpolation.
-                    NET.stateBuf.push(msg);
-                    if (NET.stateBuf.length > 6) NET.stateBuf.shift();
                 } else if (msg.type === 'room_closed'){
                     netSetStatus('Room closed');
                 }
@@ -258,17 +237,7 @@
     }
 
     function netLocalInput(){
-        // Online: jeder Client steuert genau 1 Spieler (P0 = WASD+Space, P1 = Arrows+RightShift)
-        const p = (NET.playerIndex ?? 0);
-        if (p === 1){
-            return {
-                up: !!Keys['ArrowUp'],
-                down: !!Keys['ArrowDown'],
-                left: !!Keys['ArrowLeft'],
-                right: !!Keys['ArrowRight'],
-                boost: !!Keys['ShiftRight'],
-            };
-        }
+        // Online: jeder Client steuert genau 1 Spieler (WASD + Space)
         return {
             up: !!Keys['KeyW'],
             down: !!Keys['KeyS'],
@@ -276,7 +245,6 @@
             right: !!Keys['KeyD'],
             boost: !!Keys['Space'],
         };
-    };
     }
 
     function netStartSending(){
@@ -286,7 +254,7 @@
             NET.seq++;
             const input = netLocalInput();
             wsSend({ type:'input', input:{...input, seq: NET.seq }});
-        }, 33); // ~30 Hz
+        }, 55); // ~30 Hz
     }
 
     function applyServerState(msg){
@@ -309,75 +277,10 @@
                 cars[i].pos.y = msg.car[i].y;
                 cars[i].vel.x = msg.car[i].vx || 0;
                 cars[i].vel.y = msg.car[i].vy || 0;
+                if (msg.car[i].energy !== undefined) cars[i].energy = msg.car[i].energy;
             }
         }
     }
-
-// --- Online smoothing: interpolate between server snapshots (big quality boost) ---
-const NET_RENDER_DELAY_MS = 110;   // how much we "lag behind" to get two snapshots
-const NET_SNAP_EXPIRE_MS  = 1200;
-
-function lerp(a,b,t){ return a + (b-a)*t; }
-
-function applyInterpolatedServerState(){
-    const buf = NET.stateBuf;
-    if (!buf || buf.length < 2){
-        if (NET.lastState) applyServerState(NET.lastState);
-        return;
-    }
-
-    // Estimate current server time
-    const serverNow = Date.now() + (NET.serverTimeOffset || 0);
-    const renderT = serverNow - NET_RENDER_DELAY_MS;
-
-    // Drop extremely old snapshots
-    while (buf.length > 2 && renderT - (buf[1].t || 0) > NET_SNAP_EXPIRE_MS){
-        buf.shift();
-    }
-
-    // Find snapshots that bracket renderT
-    let a = null, b = null;
-    for (let k = buf.length - 1; k >= 1; k--){
-        const s0 = buf[k-1], s1 = buf[k];
-        const t0 = s0.t || 0, t1 = s1.t || 0;
-        if (t0 <= renderT && renderT <= t1){
-            a = s0; b = s1; break;
-        }
-    }
-    if (!a || !b){
-        a = buf[buf.length-2];
-        b = buf[buf.length-1];
-    }
-
-    const t0 = a.t || 0, t1 = b.t || (t0 + 1);
-    const alpha = clamp((renderT - t0) / (t1 - t0 || 1), 0, 1);
-
-    // Score (use newest)
-    if (b.score){
-        score = b.score;
-        s1El.textContent = score[0];
-        s2El.textContent = score[1];
-    }
-
-    // Ball
-    if (a.ball && b.ball){
-        ball.pos.x = lerp(a.ball.x, b.ball.x, alpha);
-        ball.pos.y = lerp(a.ball.y, b.ball.y, alpha);
-        ball.vel.x = lerp(a.ball.vx || 0, b.ball.vx || 0, alpha);
-        ball.vel.y = lerp(a.ball.vy || 0, b.ball.vy || 0, alpha);
-    }
-
-    // Cars
-    if (a.car && b.car && a.car.length >= 2 && b.car.length >= 2){
-        for (let i=0;i<2;i++){
-            cars[i].pos.x = lerp(a.car[i].x, b.car[i].x, alpha);
-            cars[i].pos.y = lerp(a.car[i].y, b.car[i].y, alpha);
-            cars[i].vel.x = lerp(a.car[i].vx || 0, b.car[i].vx || 0, alpha);
-            cars[i].vel.y = lerp(a.car[i].vy || 0, b.car[i].vy || 0, alpha);
-        }
-    }
-}
-
 
 
     // ---------- Input ----------
@@ -941,9 +844,6 @@ function applyInterpolatedServerState(){
         hud.hidden = false;
         // kein Bot im Online-Modus
         reset(false);
-        // Match server physics sizes (important for online feel)
-        cars[0].r = cars[1].r = 18;
-        ball.r = 16;
         cars[0].isBot = false;
         cars[1].isBot = false;
         // Input senden
@@ -1031,8 +931,8 @@ function applyInterpolatedServerState(){
     // ---------- Loop ----------
     function step(dt){
         if (mode === 'online'){
-            // Server-authoritative: render from server snapshots (interpolated), no local physics/goals
-            applyInterpolatedServerState();
+            // Server-authoritative: nur State anwenden, keine lokale Physik/Goals
+            if (NET.lastState) applyServerState(NET.lastState);
             return;
         }
 
