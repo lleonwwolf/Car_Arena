@@ -45,47 +45,24 @@
         #hud .hint{font-size:12px; color:var(--muted);}
 
         .kbd{display:inline-block; padding:2px 6px; border:1px solid #334155; border-bottom-width:2px; border-radius:7px; font-size:12px; color:var(--text); background:#0b1020;}
-    
-/* --- Clickability & layering (final) --- */
-canvas#game{
-  position:fixed !important;
-  inset:0 !important;
-  margin:0 !important;
-  z-index:0 !important;
-  pointer-events:none !important;
-}
-#ui{ z-index: 1000 !important; pointer-events:auto !important; }
-#hud{ z-index: 1001 !important; pointer-events:none !important; }
-/* Ensure buttons clickable even if parent overlays exist */
-#ui *{ pointer-events:auto !important; }
-</style>
-
+    </style>
 </head>
 <body>
-<canvas id="game" width="960" height="540">
-</canvas>
 <div id="ui">
     <div class="card">
         <h1>Car Ball Arena</h1>
-        <p>Steuerung ist jetzt <b>direkt (oben/unten/links/rechts)</b> – kein Drehen. Boost funktioniert mit Energie-Anzeige.</p>
         <div class="row">
             <button id="pvp" class="primary">Spieler vs Spieler</button>
             <button id="pve">Spieler vs Bot</button>
         </div>
         <div class="divider"></div>
         <h2 style="margin:14px 0 8px; font-size:16px; font-weight:800;">Online (Server‑Authoritative)</h2>
-        <p style="margin:0 0 10px; color:var(--muted); font-size:13px;">
-            Startet ein Match über einen Room‑Code. (Kein WebRTC/ICE mehr.)
-        </p>
         <div class="row" style="gap:10px; flex-wrap:wrap;">
             <button id="onHost" class="primary">Online Host</button>
             <input id="onCode" class="input" placeholder="ROOM CODE" maxlength="6" style="width:140px; text-transform:uppercase;" />
             <button id="onJoin">Join</button>
         </div>
         <p id="onStatus" style="margin-top:10px; color:var(--muted); font-size:13px;">Status: Offline</p>
-        <p style="margin-top:6px; color:var(--muted); font-size:12px;">
-            Hinweis: In <b>WS_URL</b> im Code musst du deine Render‑URL eintragen (wss://…).
-        </p>
 
         <p style="margin-top:12px; color:var(--muted)">
             <b>Spieler 1</b>: <span class="kbd">W</span> hoch · <span class="kbd">S</span> runter · <span class="kbd">A</span> links · <span class="kbd">D</span> rechts · <span class="kbd">Space</span> Boost
@@ -102,7 +79,7 @@ canvas#game{
     <div class="hint" id="botState" style="max-width: 520px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
 </div>
 
-
+<canvas id="game" width="960" height="540"></canvas>
 
 <script>
     // =============================
@@ -156,12 +133,9 @@ canvas#game{
     };
     // ---------- Online (Server-Authoritative via WebSocket) ----------
     // Trage hier deine Render-URL ein (wss://...):
-    const WS_URL = location.origin.replace("http", "ws");
+    const WS_URL = "wss://cararena-production.up.railway.app/";
 
     const NET = {
-        snaps: [], // last server snapshots {t,car,ball,score}
-        snapDelayMs: 110,
-
         ws: null,
         connected: false,
         roomCode: "",
@@ -280,57 +254,10 @@ canvas#game{
             NET.seq++;
             const input = netLocalInput();
             wsSend({ type:'input', input:{...input, seq: NET.seq }});
-        }, 33); // ~30 Hz
+        }, 55); // ~30 Hz
     }
 
-    
-function netPushSnap(msg){
-    if (!msg || !msg.t) return;
-    NET.snaps.push(msg);
-    if (NET.snaps.length > 3) NET.snaps.shift();
-}
-
-function netRenderFromSnaps(){
-    if (NET.snaps.length < 2) { 
-        if (NET.snaps.length === 1) applyServerState(NET.snaps[0]);
-        return;
-    }
-    const a = NET.snaps[NET.snaps.length - 2];
-    const b = NET.snaps[NET.snaps.length - 1];
-
-    const rt = Date.now() - NET.snapDelayMs;
-    const t0 = a.t, t1 = b.t;
-    const alpha = Math.max(0, Math.min(1, (rt - t0) / ((t1 - t0) || 1)));
-
-    // score is discrete; just take latest
-    if (b.score){
-        score = b.score;
-        s1El.textContent = score[0];
-        s2El.textContent = score[1];
-    }
-
-    // ball
-    if (a.ball && b.ball){
-        ball.pos.x = a.ball.x + (b.ball.x - a.ball.x) * alpha;
-        ball.pos.y = a.ball.y + (b.ball.y - a.ball.y) * alpha;
-        ball.vel.x = b.ball.vx || 0;
-        ball.vel.y = b.ball.vy || 0;
-    }
-
-    // cars
-    if (a.car && b.car && a.car.length >= 2 && b.car.length >= 2){
-        for (let i=0;i<2;i++){
-            cars[i].pos.x = a.car[i].x + (b.car[i].x - a.car[i].x) * alpha;
-            cars[i].pos.y = a.car[i].y + (b.car[i].y - a.car[i].y) * alpha;
-            cars[i].vel.x = b.car[i].vx || 0;
-            cars[i].vel.y = b.car[i].vy || 0;
-            // boost energy bar (optional)
-            if (typeof b.car[i].be === "number") cars[i].boostE = b.car[i].be;
-        }
-    }
-}
-
-function applyServerState(msg){
+    function applyServerState(msg){
         // Server nutzt dieselben Pixel-Koordinaten wie das Canvas.
         if (!msg) return;
         if (msg.score){
@@ -350,6 +277,7 @@ function applyServerState(msg){
                 cars[i].pos.y = msg.car[i].y;
                 cars[i].vel.x = msg.car[i].vx || 0;
                 cars[i].vel.y = msg.car[i].vy || 0;
+                if (msg.car[i].energy !== undefined) cars[i].energy = msg.car[i].energy;
             }
         }
     }
