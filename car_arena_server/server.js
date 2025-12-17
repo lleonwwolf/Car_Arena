@@ -47,8 +47,8 @@ const CFG = {
   carR: 18,
   ballR: 16,
 
-  w: 960+CFG.carR*2,
-  h: 540+CFG.carR*2,
+  w: 960+38,
+  h: 540+38,
   pad: 44,
 
   carAccel: 0.62,
