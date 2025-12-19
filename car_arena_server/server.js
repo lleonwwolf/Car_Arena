@@ -66,7 +66,7 @@ const CFG = {
 
   kick: 0.75, // impulse scale on car-ball collision
   tickHz: 60,
-  snapHz: 60,
+  snapHz: 15, // reduce snapshots per second to lower bandwidth
 
   goalW: 22,
   goalH: 140
@@ -284,16 +284,18 @@ function stepRoom(room, dt){
 }
 
 function snapshot(room){
+  // compress numeric precision to reduce payload size (round to ints)
   return {
     type: "state",
     t: nowMs(),
     score: room.score,
     playerNames: room.playerNames,
-    car: room.car.map(c => ({ x:c.p.x, y:c.p.y, vx:c.v.x, vy:c.v.y })),
-    ball: { x:room.ball.p.x, y:room.ball.p.y, vx:room.ball.v.x, vy:room.ball.v.y },
-    energy: room.energy,
-    started: room.started,
-    countdown: room.countdownRemaining
+    // round positions/velocities to integers to shrink JSON
+    car: room.car.map(c => ({ x: Math.round(c.p.x), y: Math.round(c.p.y), vx: Math.round(c.v.x), vy: Math.round(c.v.y) })),
+    ball: { x: Math.round(room.ball.p.x), y: Math.round(room.ball.p.y), vx: Math.round(room.ball.v.x), vy: Math.round(room.ball.v.y) },
+    energy: room.energy.map(e => Math.round(e)),
+     started: room.started,
+     countdown: room.countdownRemaining
   };
 }
 
