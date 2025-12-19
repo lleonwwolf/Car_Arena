@@ -98,7 +98,8 @@ function createRoom(maxPlayers = 2) {
   for (let i=0;i<maxPlayers;i++){
     const side = (i % 2 === 0) ? 'left' : 'right';
     const x = (side === 'left') ? (CFG.pad + 140) : (CFG.w - CFG.pad - 140);
-    const y = CFG.h/2 + ((i < maxPlayers/2) ? -80 : 80);
+    // Bei 1v1: beide mittig. Bei 2v2: oben/unten Offset
+    const y = (maxPlayers === 2) ? (CFG.h/2) : (CFG.h/2 + ((i < maxPlayers/2) ? -80 : 80));
     room.car.push({ p: new Vec(x,y), v: new Vec(0,0) });
   }
 
@@ -112,7 +113,8 @@ function resetKickoff(room, scorerIdx=null){
   for (let i=0;i<room.maxPlayers;i++){
     const side = (i % 2 === 0) ? 'left' : 'right';
     const x = (side === 'left') ? (CFG.pad + 140) : (CFG.w - CFG.pad - 140);
-    const y = CFG.h/2 + ((i < room.maxPlayers/2) ? -80 : 80);
+    // Bei 1v1: beide mittig. Bei 2v2: oben/unten Offset
+    const y = (room.maxPlayers === 2) ? (CFG.h/2) : (CFG.h/2 + ((i < room.maxPlayers/2) ? -80 : 80));
     room.car[i].p = new Vec(x,y);
     room.car[i].v = new Vec(0,0);
   }
