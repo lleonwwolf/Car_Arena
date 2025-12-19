@@ -79,6 +79,12 @@
                 </select>
             </div>
 
+            <!-- Name-Input für Online -->
+            <div class="row" style="margin-bottom:8px; align-items:center;">
+                <label style="font-weight:700; margin-right:8px; line-height:36px;">Name:</label>
+                <input id="onPlayerName" class="input" placeholder="Dein Name" maxlength="20" style="width:160px;" />
+            </div>
+
             <div class="row" style="gap:10px; flex-wrap:wrap;">
                 <button id="onHost" class="primary">Online Host</button>
                 <input id="onCode" class="input" placeholder="ROOM CODE" maxlength="6" style="width:140px; text-transform:uppercase;" />
@@ -167,6 +173,7 @@
         lastStateAt: 0,
         sendTimer: null,
         seq: 0,
+        playerNames: {},  // { 0: "Name1", 1: "Name2", ... }
     };
 
     // client-seitige Erwartung (für Anzeige bevor Server bestätigt)
@@ -289,51 +296,56 @@
     }
 
     function applyServerState(msg){
-        // Server nutzt dieselben Pixel-Koordinaten wie das Canvas.
-        if (!msg) return;
-        if (msg.score){
-            score = msg.score;
-            s1El.textContent = score[0];
-            s2El.textContent = score[1];
+         // Server nutzt dieselben Pixel-Koordinaten wie das Canvas.
+         if (!msg) return;
+         if (msg.score){
+             score = msg.score;
+             s1El.textContent = score[0];
+             s2El.textContent = score[1];
+         }
+         if (msg.ball){
+             ball.pos.x = msg.ball.x;
+             ball.pos.y = msg.ball.y;
+             ball.vel.x = msg.ball.vx || 0;
+             ball.vel.y = msg.ball.vy || 0;
+         }
+        // Namen vom Server übernehmen
+        if (msg.playerNames && typeof msg.playerNames === 'object'){
+            NET.playerNames = msg.playerNames;
         }
-        if (msg.ball){
-            ball.pos.x = msg.ball.x;
-            ball.pos.y = msg.ball.y;
-            ball.vel.x = msg.ball.vx || 0;
-            ball.vel.y = msg.ball.vy || 0;
-        }
-        if (msg.car && Array.isArray(msg.car)){
-            // stelle sicher, dass lokale Anzeige genug Cars hat
-            if (cars.length < msg.car.length){
-                const add = msg.car.length - cars.length;
-                for (let k=0;k<add;k++){
-                    const idx = cars.length;
-                    const side = (idx < (msg.car.length/2)) ? 'left' : 'right';
-                    const controls = (idx===0) ? { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' }
-                                   : (idx===1) ? { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
-                                   : { up:null, down:null, left:null, right:null, boost:null };
-                    cars.push(new Car({
-                        x: canvas.width/2, y: canvas.height/2,
-                        color: (idx%2===0) ? getCss('--blue') : getCss('--red'),
-                        side,
-                        controls,
-                        isBot:false
-                    }));
-                }
-            }
-            for (let i=0;i<msg.car.length && i<cars.length;i++){
-                cars[i].pos.x = msg.car[i].x;
-                cars[i].pos.y = msg.car[i].y;
-                cars[i].vel.x = msg.car[i].vx || 0;
-                cars[i].vel.y = msg.car[i].vy || 0;
-            }
-            if (Array.isArray(msg.energy)){
-                for (let i=0;i<msg.energy.length && i<cars.length;i++){
-                    if (msg.energy[i] !== undefined) cars[i].energy = msg.energy[i];
-                }
-            }
-        }
-    }
+         if (msg.car && Array.isArray(msg.car)){
+             // stelle sicher, dass lokale Anzeige genug Cars hat
+             if (cars.length < msg.car.length){
+                 const add = msg.car.length - cars.length;
+                 for (let k=0;k<add;k++){
+                     const idx = cars.length;
+-                    const side = (idx < (msg.car.length/2)) ? 'left' : 'right';
++                    const side = (idx % 2 === 0) ? 'left' : 'right';
+                     const controls = (idx===0) ? { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' }
+                                    : (idx===1) ? { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
+                                    : { up:null, down:null, left:null, right:null, boost:null };
+                     cars.push(new Car({
+                         x: canvas.width/2, y: canvas.height/2,
+                         color: (idx%2===0) ? getCss('--blue') : getCss('--red'),
+                         side,
+                         controls,
+                         isBot:false
+                     }));
+                 }
+             }
+             for (let i=0;i<msg.car.length && i<cars.length;i++){
+                 cars[i].pos.x = msg.car[i].x;
+                 cars[i].pos.y = msg.car[i].y;
+                 cars[i].vel.x = msg.car[i].vx || 0;
+                 cars[i].vel.y = msg.car[i].vy || 0;
+             }
+             if (Array.isArray(msg.energy)){
+                 for (let i=0;i<msg.energy.length && i<cars.length;i++){
+                     if (msg.energy[i] !== undefined) cars[i].energy = msg.energy[i];
+                 }
+             }
+         }
+     }
 
 
     // ---------- Input ----------
@@ -1027,71 +1039,88 @@
     }
 
     function loop(t){
-        if (!running) return;
-        const dt = clamp((t - lastT) / 1000, 0, 1/30); // stable
-        lastT = t;
+         if (!running) return;
+         const dt = clamp((t - lastT) / 1000, 0, 1/30); // stable
+         lastT = t;
 
-        step(dt);
+         step(dt);
 
-        drawField();
-         ball.draw();
-         cars.forEach(c => c.draw());
+         drawField();
+          ball.draw();
+          cars.forEach(c => c.draw());
 
-         // Bot-Status im HUD anzeigen
-         if (botStateEl){
-             if (cars[1] && cars[1].isBot){
-                 const m = cars[1].ai?.mode || '';
-                 const e = Math.round(cars[1].energy);
-                 botStateEl.textContent = `Bot: ${botModeLabel(m)} · Energy: ${e}% · commit: ${(cars[1].ai.until.toFixed(3)-lastT.toFixed(3)).toFixed(1)}s`;
-             } else {
-                 botStateEl.textContent = '';
-             }
-         }
++         // Namen anzeigen (lokal oder online)
++         if (mode === 'online'){
++             cars.forEach((car, idx) => {
++                 const name = NET.playerNames[idx] || ('Spieler ' + (idx+1));
++                 ctx.globalAlpha = 0.95;
++                 ctx.fillStyle = car.color;
++                 ctx.font = 'bold 13px system-ui';
++                 ctx.textAlign = 'center';
++                 ctx.fillText(name, car.pos.x, car.pos.y - car.r - 12);
++                 ctx.globalAlpha = 1;
++             });
++         }
 
-         requestAnimationFrame(loop);
-    }
+          // Bot-Status im HUD anzeigen
+          if (botStateEl){
+              if (cars[1] && cars[1].isBot){
+                  const m = cars[1].ai?.mode || '';
+                  const e = Math.round(cars[1].energy);
+                  botStateEl.textContent = `Bot: ${botModeLabel(m)} · Energy: ${e}% · commit: ${(cars[1].ai.until.toFixed(3)-lastT.toFixed(3)).toFixed(1)}s`;
+              } else {
+                  botStateEl.textContent = '';
+              }
+          }
+
+          requestAnimationFrame(loop);
+     }
 
     // ---------- UI: Init zweistufige Auswahl ----------
     function initUI(){
-        const show = id => { const e = document.getElementById(id); if (e) e.style.display = ''; };
-        const hide = id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; };
+         const show = id => { const e = document.getElementById(id); if (e) e.style.display = ''; };
+         const hide = id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; };
 
-        // Hauptwahl sichtbar, Panels versteckt (sicherstellen)
-        hide('localOptions'); hide('onlineOptions');
+         // Hauptwahl sichtbar, Panels versteckt (sicherstellen)
+         hide('localOptions'); hide('onlineOptions');
 
-        // Choice buttons
-        const bLocal = document.getElementById('btnLocalChoice');
-        const bOnline = document.getElementById('btnOnlineChoice');
-        if (bLocal) bLocal.addEventListener('click', () => { show('localOptions'); hide('onlineOptions'); });
-        if (bOnline) bOnline.addEventListener('click', () => { show('onlineOptions'); hide('localOptions'); });
+         // Choice buttons
+         const bLocal = document.getElementById('btnLocalChoice');
+         const bOnline = document.getElementById('btnOnlineChoice');
+         if (bLocal) bLocal.addEventListener('click', () => { show('localOptions'); hide('onlineOptions'); });
+         if (bOnline) bOnline.addEventListener('click', () => { show('onlineOptions'); hide('localOptions'); });
 
-        // Local action buttons
-        const pvp = document.getElementById('pvp');
-        const pve = document.getElementById('pve');
-        if (pvp) pvp.addEventListener('click', () => { mode = 'pvp'; start(); });
-        if (pve) pve.addEventListener('click', () => { mode = 'pve'; start(); });
+         // Local action buttons
+         const pvp = document.getElementById('pvp');
+         const pve = document.getElementById('pve');
+         if (pvp) pvp.addEventListener('click', () => { mode = 'pvp'; start(); });
+         if (pve) pve.addEventListener('click', () => { mode = 'pve'; start(); });
 
-        // Online Host / Join
-        const onHost = document.getElementById('onHost');
-        if (onHost) onHost.addEventListener('click', async () => {
-            try{
-                await netConnect();
-                const maxP = parseInt(document.getElementById('onVariant')?.value || '2', 10) || 2;
-                expectedPlayers = maxP;
-                wsSend({ type:'create_room', maxPlayers: maxP });
-            }catch(e){ console.warn(e); }
-        });
+         // Online Host / Join
+         const onHost = document.getElementById('onHost');
+         if (onHost) onHost.addEventListener('click', async () => {
+             try{
+                 const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
+                 await netConnect();
+                 const maxP = parseInt(document.getElementById('onVariant')?.value || '2', 10) || 2;
+                 expectedPlayers = maxP;
+-                wsSend({ type:'create_room', maxPlayers: maxP });
++                wsSend({ type:'create_room', maxPlayers: maxP, playerName });
+             }catch(e){ console.warn(e); }
+         });
 
-        const onJoin = document.getElementById('onJoin');
-        if (onJoin) onJoin.addEventListener('click', async () => {
-            const code = (document.getElementById('onCode')?.value || '').trim().toUpperCase();
-            if (!code){ netSetStatus('Code fehlt'); return; }
-            try{
-                expectedPlayers = parseInt(document.getElementById('onVariant')?.value || '2',10) || 2;
-                await netConnect();
-                wsSend({ type:'join_room', code });
-            }catch(e){ console.warn(e); }
-        });
+         const onJoin = document.getElementById('onJoin');
+         if (onJoin) onJoin.addEventListener('click', async () => {
+             const code = (document.getElementById('onCode')?.value || '').trim().toUpperCase();
+             if (!code){ netSetStatus('Code fehlt'); return; }
+             try{
++                const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
+                 expectedPlayers = parseInt(document.getElementById('onVariant')?.value || '2',10) || 2;
+                 await netConnect();
+-                wsSend({ type:'join_room', code });
++                wsSend({ type:'join_room', code, playerName });
+             }catch(e){ console.warn(e); }
+         });
     }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initUI);
