@@ -84,7 +84,7 @@ function createRoom(maxPlayers = 2) {
     clients: new Set(),
     maxPlayers,
     players: new Array(maxPlayers).fill(null),
-    playerNames: new Array(maxPlayers).fill(''),  // speichere Namen
+    playerNames: new Array(maxPlayers).fill(''),
     input: new Array(maxPlayers).fill(0).map(()=>({ up:false, down:false, left:false, right:false, boost:false, seq:0 })),
     score: [0,0],
     energy: new Array(maxPlayers).fill(100),
@@ -92,7 +92,12 @@ function createRoom(maxPlayers = 2) {
     car: [],
     ball: { p: new Vec(CFG.w/2, CFG.h/2), v: new Vec(0,0) },
     lastTick: nowMs(),
-    lastSnap: 0
+    lastSnap: 0,
+
+    // neue Lobby/Match Felder
+    started: false,               // true wenn Spiel läuft
+    countdownRemaining: 0,        // seconds left (int), 0 = no countdown
+    countdownLastTick: 0          // timestamp ms für das nächste decrement
   };
 
   // Abwechselnd links/rechts: 0,2 links; 1,3 rechts
@@ -281,7 +286,9 @@ function snapshot(room){
     playerNames: room.playerNames,
     car: room.car.map(c => ({ x:c.p.x, y:c.p.y, vx:c.v.x, vy:c.v.y })),
     ball: { x:room.ball.p.x, y:room.ball.p.y, vx:room.ball.v.x, vy:room.ball.v.y },
-    energy: room.energy
+    energy: room.energy,
+    started: room.started,
+    countdown: room.countdownRemaining
   };
 }
 
@@ -312,6 +319,8 @@ wss.on("connection", (ws) => {
 
       send(ws, { type:"room_created", code: room.code, playerIndex: 0, cfg: CFG, maxPlayers: room.maxPlayers });
       resetKickoff(room);
+      // try to start if already full (rare for host-only create)
+      tryStartCountdown(room);
       return;
     }
 
@@ -334,7 +343,9 @@ wss.on("connection", (ws) => {
       ws.playerIndex = idx;
 
       send(ws, { type:"join_ok", code, playerIndex: idx, cfg: CFG, maxPlayers: room.maxPlayers });
-      broadcastRoom(room, { type:"player_joined", count: room.clients.size });
+      broadcastRoom(room, { type:"player_joined", count: room.clients.size, playerNames: room.playerNames });
+      // wenn Lobby jetzt voll und alle Namen gesetzt -> start countdown
+      tryStartCountdown(room);
       return;
     }
 
@@ -345,6 +356,9 @@ wss.on("connection", (ws) => {
       const room = rooms.get(code);
       if (!room) return;
 
+      // Ignoriere Inputs solange Spiel nicht gestartet ist
+      if (!room.started) return;
+
       const inp = msg.input || {};
       // sanitize
       room.input[idx] = {
@@ -352,6 +366,54 @@ wss.on("connection", (ws) => {
         boost: !!inp.boost,
         seq: (inp.seq|0)
       };
+      return;
+    }
+
+    if (msg.type === "switch_team"){
+      const code = ws.roomCode;
+      const idx = ws.playerIndex;
+      const sideRequested = (msg.side === 'right' || msg.side === 'red') ? 'right' : 'left';
+      if (!code || idx === null) {
+        send(ws, { type:'switch_failed', reason:'not_in_room' });
+        return;
+      }
+      const room = rooms.get(code);
+      if (!room) { send(ws, { type:'switch_failed', reason:'room_not_found' }); return; }
+      if (room.started) { send(ws, { type:'switch_failed', reason:'match_started' }); return; }
+
+      // compute candidate indices for desired side
+      const candidates = [];
+      for (let i=0;i<room.maxPlayers;i++){
+        if ((i % 2 === 0 && sideRequested === 'left') || (i % 2 === 1 && sideRequested === 'right')) candidates.push(i);
+      }
+      // find empty candidate
+      let target = null;
+      for (const c of candidates) if (!room.players[c]) { target = c; break; }
+
+      if (target === null){
+        // no empty slot on that side
+        send(ws, { type:'switch_failed', reason:'no_slot' });
+        return;
+      }
+
+      // perform move: vacate old slot, assign new
+      const oldIdx = ws.playerIndex;
+      room.players[oldIdx] = null;
+      // move name if present
+      const name = (room.playerNames[oldIdx] || '').slice(0,20);
+      room.playerNames[oldIdx] = '';
+      room.players[target] = ws;
+      room.playerNames[target] = name || ('Player'+(target+1));
+      ws.playerIndex = target;
+
+      // inform client of new index
+      send(ws, { type:'switch_ok', newIndex: target });
+
+      // broadcast updated occupancy/names
+      broadcastRoom(room, { type:'player_joined', count: room.clients.size, playerNames: room.playerNames });
+
+      // try start countdown if now full
+      tryStartCountdown(room);
       return;
     }
   });
@@ -364,15 +426,39 @@ wss.on("connection", (ws) => {
 
     room.clients.delete(ws);
     if (ws.playerIndex !== null && room.players[ws.playerIndex] === ws){
+      // clear slot and name
       room.players[ws.playerIndex] = null;
+      room.playerNames[ws.playerIndex] = '';
     }
 
-    broadcastRoom(room, { type:"player_left", count: room.clients.size });
+    broadcastRoom(room, { type:"player_left", count: room.clients.size, playerNames: room.playerNames });
+
+    // cancel countdown / stop the match if players leave before start
+    if (!room.started && room.countdownRemaining > 0){
+      room.countdownRemaining = 0;
+      broadcastRoom(room, { type:'countdown_cancelled' });
+    }
 
     // cleanup empty
     if (room.clients.size === 0) rooms.delete(code);
   });
 });
+
+// ---------- Lobby start helper ----------
+function tryStartCountdown(room){
+  if (room.started) return;
+  if (room.countdownRemaining > 0) return;
+  // prüfen, ob alle player slots besetzt und Namen gesetzt sind
+  let allPresent = true;
+  for (let i=0;i<room.maxPlayers;i++){
+    if (!room.players[i]) { allPresent = false; break; }
+    if (!room.playerNames[i] || room.playerNames[i].trim() === '') { allPresent = false; break; }
+  }
+  if (!allPresent) return;
+  room.countdownRemaining = 3;
+  room.countdownLastTick = nowMs();
+  broadcastRoom(room, { type:'countdown', remaining: room.countdownRemaining });
+}
 
 // heartbeat
 setInterval(() => {
@@ -391,7 +477,30 @@ setInterval(() => {
   last = t;
 
   for (const room of rooms.values()){
-    stepRoom(room, dt);
+    // handle countdown timing (server-side)
+    if (!room.started && room.countdownRemaining > 0){
+      const elapsed = t - room.countdownLastTick;
+      if (elapsed >= 1000){
+        // reduce by number of full seconds
+        const steps = Math.floor(elapsed / 1000);
+        room.countdownRemaining = Math.max(0, room.countdownRemaining - steps);
+        room.countdownLastTick += steps * 1000;
+        // broadcast update
+        broadcastRoom(room, { type:'countdown', remaining: room.countdownRemaining });
+        if (room.countdownRemaining === 0){
+          // start match
+          room.started = true;
+          resetKickoff(room); // place cars/ball for kickoff
+          // inform clients
+          broadcastRoom(room, { type:'start' });
+        }
+      }
+    }
+
+    // only tick physics when match started
+    if (room.started){
+      stepRoom(room, dt);
+    }
 
     const snapEvery = 1000 / CFG.snapHz;
     if (t - room.lastSnap >= snapEvery){
