@@ -94,13 +94,11 @@ function createRoom(maxPlayers = 2) {
     lastSnap: 0
   };
 
-  const leftX = CFG.pad + 140;
-  const rightX = CFG.w - CFG.pad - 140;
-  const offsets = (maxPlayers === 4) ? [-80, 80, -80, 80] : [0, 0];
+  // Abwechselnd links/rechts: 0,2 links; 1,3 rechts
   for (let i=0;i<maxPlayers;i++){
-    const side = (i < maxPlayers/2) ? 'left' : 'right';
-    const x = (side === 'left') ? leftX : rightX;
-    const y = CFG.h/2 + (offsets[i] || 0);
+    const side = (i % 2 === 0) ? 'left' : 'right';
+    const x = (side === 'left') ? (CFG.pad + 140) : (CFG.w - CFG.pad - 140);
+    const y = CFG.h/2 + ((i < maxPlayers/2) ? -80 : 80);
     room.car.push({ p: new Vec(x,y), v: new Vec(0,0) });
   }
 
@@ -110,13 +108,11 @@ function createRoom(maxPlayers = 2) {
 
 function resetKickoff(room, scorerIdx=null){
   room.energy = new Array(room.maxPlayers).fill(100);
-  const leftX = CFG.pad + 140;
-  const rightX = CFG.w - CFG.pad - 140;
-  const offsets = (room.maxPlayers === 4) ? [-80, 80, -80, 80] : [0,0];
+  // Abwechselnd links/rechts: 0,2 links; 1,3 rechts
   for (let i=0;i<room.maxPlayers;i++){
-    const side = (i < room.maxPlayers/2) ? 'left' : 'right';
-    const x = (side === 'left') ? leftX : rightX;
-    const y = CFG.h/2 + (offsets[i] || 0);
+    const side = (i % 2 === 0) ? 'left' : 'right';
+    const x = (side === 'left') ? (CFG.pad + 140) : (CFG.w - CFG.pad - 140);
+    const y = CFG.h/2 + ((i < room.maxPlayers/2) ? -80 : 80);
     room.car[i].p = new Vec(x,y);
     room.car[i].v = new Vec(0,0);
   }
