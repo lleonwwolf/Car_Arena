@@ -45,6 +45,43 @@
         #hud .hint{font-size:12px; color:var(--muted);}
 
         .kbd{display:inline-block; padding:2px 6px; border:1px solid #334155; border-bottom-width:2px; border-radius:7px; font-size:12px; color:var(--text); background:#0b1020;}
+
+        /* Countdown Overlay Styles */
+        #countdownOverlay{
+            position:fixed;
+            left:50%;
+            top:50%;
+            transform:translate(-50%,-50%) scale(.98);
+            width:320px;
+            max-width:88vw;
+            pointer-events:none;
+            display:none;
+            align-items:center;
+            justify-content:center;
+            z-index:10010;
+            text-align:center;
+        }
+        #countdownOverlay.visible{ display:flex; animation: popIn .28s cubic-bezier(.2,.9,.2,1); pointer-events:auto; transform:translate(-50%,-50%) scale(1); }
+        @keyframes popIn { from { transform: translate(-50%,-50%) scale(.9); opacity:0 } to { transform: translate(-50%,-50%) scale(1); opacity:1 } }
+
+        #countdownOverlay .backdrop{
+            position:absolute; inset:0; border-radius:18px; background:linear-gradient(180deg, rgba(2,6,23,0.68), rgba(2,6,23,0.78));
+            box-shadow:0 30px 60px rgba(0,0,0,0.6); backdrop-filter:blur(8px);
+            border:1px solid rgba(255,255,255,0.04);
+        }
+        #countdownOverlay .box{position:relative; padding:28px 22px; width:100%; display:flex; flex-direction:column; gap:12px; align-items:center;}
+        #countdownRing{
+            width:120px; height:120px; border-radius:50%;
+            background: conic-gradient(var(--blue) 0deg, rgba(255,255,255,0.06) 0deg);
+            display:flex; align-items:center; justify-content:center;
+            box-shadow: inset 0 6px 18px rgba(0,0,0,0.35), 0 8px 30px rgba(2,6,23,0.6);
+        }
+        #countdownInner{
+            width:84px; height:84px; border-radius:50%; background:linear-gradient(180deg,#071022,#03101a);
+            display:flex; align-items:center; justify-content:center; color:var(--text);
+            font-weight:800; font-size:42px; letter-spacing:1px;
+        }
+        #countdownLabel{ color:var(--muted); font-weight:600; font-size:14px; margin-top:4px; }
     </style>
 </head>
 <body>
@@ -134,6 +171,17 @@
             <div style="color:var(--muted);" id="lobbyNotice">Warte auf Spieler…</div>
             <button id="lobbyLeave" style="padding:8px 10px;">Zurück</button>
         </div>
+    </div>
+</div>
+
+<!-- Countdown Overlay (DOM) -->
+<div id="countdownOverlay" aria-hidden="true">
+    <div class="backdrop" aria-hidden="true"></div>
+    <div class="box">
+        <div id="countdownRing" role="status" aria-live="polite">
+            <div id="countdownInner">3</div>
+        </div>
+        <div id="countdownLabel">Spiel startet in</div>
     </div>
 </div>
 
@@ -349,12 +397,13 @@
 
     function netStartSending(){
         if (NET.sendTimer) clearInterval(NET.sendTimer);
+        // send input ~10Hz to reduce upstream bandwidth while keeping responsiveness
         NET.sendTimer = setInterval(() => {
             if (mode !== 'online' || !NET.connected) return;
             NET.seq++;
             const input = netLocalInput();
             wsSend({ type:'input', input:{...input, seq: NET.seq }});
-        }, 66); // ~60 Hz
+        }, 100); // ~10 Hz
     }
 
     function applyServerState(msg){
@@ -933,6 +982,10 @@
     let running = false;
     let lastT = 0;
 
+    // local countdown state (für local games)
+    let localCountdown = 0;           // Sekunden verbleibend (float)
+    let localCountdownActive = false; // true solange Countdown läuft
+
     function kickoff(){
         ball.pos.set(canvas.width/2, canvas.height/2);
         ball.vel.set((Math.random()*2-1)*120, (Math.random()*2-1)*70);
@@ -1004,6 +1057,9 @@
         ui.style.display = 'none';
         hud.hidden = false;
         reset(false);
+        // ensure any local countdown stops on fresh start
+        localCountdownActive = false;
+        localCountdown = 0;
         running = true;
         lastT = performance.now();
         requestAnimationFrame(loop);
@@ -1016,13 +1072,26 @@
         // left goal: ball must cross beyond left goal depth while inside mouth
         const leftGoalLine = CFG.pad - CFG.goalDepth;
         if (ball.pos.x + ball.r < leftGoalLine && Math.abs(ball.pos.y - cy) < halfG){
-            score[1]++; s2El.textContent = score[1]; kickoff();
+            score[1]++;
+            s2El.textContent = score[1];
+            // local: start short countdown before kickoff
+            if (mode !== 'online'){
+                localCountdown = 3.0;
+                localCountdownActive = true;
+            }
+            return;
         }
 
         // right goal
         const rightGoalLine = canvas.width - (CFG.pad - CFG.goalDepth);
         if (ball.pos.x - ball.r > rightGoalLine && Math.abs(ball.pos.y - cy) < halfG){
-            score[0]++; s1El.textContent = score[0]; kickoff();
+            score[0]++;
+            s1El.textContent = score[0];
+            if (mode !== 'online'){
+                localCountdown = 3.0;
+                localCountdownActive = true;
+            }
+            return;
         }
     }
 
@@ -1083,6 +1152,12 @@
             return;
         }
 
+        // Local countdown active -> pause physics until it runs out
+        if (localCountdownActive){
+            // inputs are ignored during countdown
+            return;
+        }
+
         // input
         cars[0].inputHuman(dt);
         if (cars[1].isBot) cars[1].inputBot(ball, dt);
@@ -1106,6 +1181,17 @@
          if (!running) return;
          const dt = clamp((t - lastT) / 1000, 0, 1/30); // stable
          lastT = t;
+
+         // If local countdown active, decrement timer here (so overlay updates) but keep rendering
+         if (localCountdownActive){
+             localCountdown -= dt;
+             if (localCountdown <= 0){
+                 localCountdownActive = false;
+                 localCountdown = 0;
+                 // perform kickoff after countdown
+                 kickoff();
+             }
+         }
 
          step(dt);
 
@@ -1149,6 +1235,20 @@
                     ctx.fillText('Warte auf Spieler...', canvas.width/2, canvas.height/2 + 12);
                 }
             }
+            ctx.restore();
+        }
+
+         // Lokaler Countdown Overlay (nach Tor im lokalen Spiel)
+         if (mode !== 'online' && localCountdownActive){
+            ctx.save();
+            ctx.globalAlpha = 0.7;
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, canvas.height/2 - 56, canvas.width, 112);
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 34px system-ui';
+            ctx.fillText('Weiter in ' + Math.ceil(localCountdown), canvas.width/2, canvas.height/2 + 12);
             ctx.restore();
         }
 
@@ -1427,6 +1527,101 @@
 
     // If the page used showMenu() on load, keep that behaviour:
     // ...existing code may call showMenu() already...
+    // DOM handles for countdown overlay
+    const countdownOverlay = document.getElementById('countdownOverlay');
+    const countdownRing = document.getElementById('countdownRing');
+    const countdownInner = document.getElementById('countdownInner');
+    const countdownLabel = document.getElementById('countdownLabel');
+    let _countdownTotal = 3; // default total seconds used for ring fraction
+
+    function showCountdown(remaining, total=3, label='Spiel startet in'){
+        _countdownTotal = Math.max(1, total);
+        countdownInner.textContent = String(Math.max(0, Math.ceil(remaining)));
+        countdownLabel.textContent = label;
+        updateCountdownRing(remaining);
+        countdownOverlay.classList.add('visible');
+        countdownOverlay.style.display = 'flex';
+        countdownOverlay.setAttribute('aria-hidden','false');
+    }
+    function hideCountdown(){
+        countdownOverlay.classList.remove('visible');
+        countdownOverlay.style.display = 'none';
+        countdownOverlay.setAttribute('aria-hidden','true');
+    }
+    function updateCountdownRing(remaining){
+        const frac = clamp(Math.max(0, remaining) / Math.max(1, _countdownTotal), 0, 1);
+        const deg = Math.round(frac * 360);
+        // prefer team color if available: use CSS var --blue for positive
+        const accent = getCss('--blue') || '#60a5fa';
+        countdownRing.style.background = `conic-gradient(${accent} ${deg}deg, rgba(255,255,255,0.06) ${deg}deg)`;
+        countdownInner.textContent = String(Math.max(0, Math.ceil(remaining)));
+    }
+
+    // validate presence of CSS variables to help IDE warnings (logs missing to console)
+    (function validateCssVars(){
+        const expected = ['--bg','--panel','--field1','--field2','--line','--text','--muted','--blue','--red','--ball','--good'];
+        const cs = getComputedStyle(document.documentElement);
+        const missing = expected.filter(v => (cs.getPropertyValue(v) || '').trim() === '');
+        if (missing.length) console.warn('Fehlende CSS-Variablen:', missing);
+    })();
+
+    // ---------- Patch: Countdown Overlay Integration ----------
+    // We'll inject small handlers by wrapping ws.onmessage assignment earlier in netConnect()
+    // (Below: in the ws.onmessage path the code already handles 'countdown' in some places; ensure we also show/hide overlay)
+
+    // To keep patch minimal: add a small listener that watches NET.lastState and server messages
+    // For server-side countdown messages (ws.onmessage already checks msg.type === 'countdown' or 'countdown_cancelled')
+    // ensure show/hide is called there; we'll add the logic right after netSetStatus calls in netConnect's onmessage branches.
+
+    // (Find the ws.onmessage body above; after the 'countdown' branch add:)
+    // Note: below we rely on the existing ws.onmessage branches already present; add handlers to show/hide overlay globally:
+    const _origNetConnect = netConnect;
+    netConnect = function(...args){
+        return _origNetConnect().then(() => {
+            // attach a small wrapper that intercepts countdown messages from NET.ws (if present)
+            const ws = NET.ws;
+            if (!ws) return;
+            const prevOnMsg = ws.onmessage;
+            ws.onmessage = (ev) => {
+                let msg;
+                try{ msg = JSON.parse(ev.data); }catch{ if (prevOnMsg) prevOnMsg(ev); return; }
+                if (msg.type === 'countdown'){
+                    // show overlay with server countdown (assume total 3s)
+                    showCountdown((typeof msg.remaining === 'number') ? msg.remaining : 0, 3, 'Spiel startet in');
+                } else if (msg.type === 'countdown_cancelled'){
+                    hideCountdown();
+                } else if (msg.type === 'start'){
+                    hideCountdown();
+                } else if (msg.type === 'goal'){
+                    // server started goal countdown separately via countdown messages; keep as-is
+                }
+                // forward to original handler so client logic still runs
+                if (prevOnMsg) prevOnMsg(ev);
+            };
+        });
+    };
+
+    // Update local countdown usage: replace canvas overlay usage with DOM overlay calls
+    // find in loop() where localCountdownActive is handled and add show/hide calls around it
+    // (we'll update the existing loop code region:)
+    // ...existing loop function further down...
+    // Insert small helper to sync overlay in animation loop:
+    const _origLoop = loop;
+    loop = function(t){
+        // call original loop logic (it updates localCountdown variable)
+        _origLoop(t);
+        // after loop run, if local countdown active reflect in DOM
+        if (localCountdownActive){
+            updateCountdownRing(localCountdown);
+            showCountdown(localCountdown, 3, 'Weiter in');
+        } else {
+            // if no local/countdown active and no server countdown, hide overlay
+            // server overlay handled by ws messages; local hide here
+            if (!(NET.lastState && typeof NET.lastState.countdown === 'number' && NET.lastState.countdown > 0)){
+                hideCountdown();
+            }
+        }
+    };
 </script>
 </body>
 </html>
