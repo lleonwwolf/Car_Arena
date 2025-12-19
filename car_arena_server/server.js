@@ -84,6 +84,7 @@ function createRoom(maxPlayers = 2) {
     clients: new Set(),
     maxPlayers,
     players: new Array(maxPlayers).fill(null),
+    playerNames: new Array(maxPlayers).fill(''),  // speichere Namen
     input: new Array(maxPlayers).fill(0).map(()=>({ up:false, down:false, left:false, right:false, boost:false, seq:0 })),
     score: [0,0],
     energy: new Array(maxPlayers).fill(100),
@@ -260,6 +261,7 @@ function snapshot(room){
     type: "state",
     t: nowMs(),
     score: room.score,
+    playerNames: room.playerNames,
     car: room.car.map(c => ({ x:c.p.x, y:c.p.y, vx:c.v.x, vy:c.v.y })),
     ball: { x:room.ball.p.x, y:room.ball.p.y, vx:room.ball.v.x, vy:room.ball.v.y },
     energy: room.energy
@@ -287,6 +289,7 @@ wss.on("connection", (ws) => {
       const room = createRoom(maxP);
       room.clients.add(ws);
       room.players[0] = ws; // creator becomes p0
+      room.playerNames[0] = (msg.playerName || 'Player').slice(0, 20);
       ws.roomCode = room.code;
       ws.playerIndex = 0;
 
@@ -309,6 +312,7 @@ wss.on("connection", (ws) => {
       if (idx === null) return send(ws, { type:"join_failed", reason:"Room full" });
 
       room.players[idx] = ws;
+      room.playerNames[idx] = (msg.playerName || 'Player').slice(0, 20);
       ws.roomCode = code;
       ws.playerIndex = idx;
 
