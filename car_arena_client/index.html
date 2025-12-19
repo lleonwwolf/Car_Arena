@@ -167,7 +167,7 @@
         </div>
 
         <div style="display:flex; justify-content:space-between; gap:12px; margin-top:10px;">
-            <div style="color:var(--muted);">Raum: <span id="lobbyCode">—</span></div>
+            <div style="color:var(--muted);">Raum: <span id="lobbyCode">—</span> <button id="lobbyCopyBtn" style="padding:4px 8px; font-size:12px; margin-left:6px;">Kopieren</button></div>
             <div style="color:var(--muted);" id="lobbyNotice">Warte auf Spieler…</div>
             <button id="lobbyLeave" style="padding:8px 10px;">Zurück</button>
         </div>
@@ -397,13 +397,13 @@
 
     function netStartSending(){
         if (NET.sendTimer) clearInterval(NET.sendTimer);
-        // send input ~10Hz to reduce upstream bandwidth while keeping responsiveness
+        // back to ~60 Hz for smooth input
         NET.sendTimer = setInterval(() => {
             if (mode !== 'online' || !NET.connected) return;
             NET.seq++;
             const input = netLocalInput();
             wsSend({ type:'input', input:{...input, seq: NET.seq }});
-        }, 100); // ~10 Hz
+        }, 66); // ~60 Hz
     }
 
     function applyServerState(msg){
@@ -1215,43 +1215,6 @@
              });
          }
 
-        // Zentrales Countdown / Lobby Overlay (falls serverseitig aktiv)
-        if (mode === 'online' && NET.lastState){
-            const cd = (typeof NET.lastState.countdown === 'number') ? NET.lastState.countdown : NET.serverCountdown;
-            const started = (typeof NET.lastState.started === 'boolean') ? NET.lastState.started : NET.serverStarted;
-            ctx.save();
-            if (!started){
-                // semi-transparent backdrop
-                ctx.globalAlpha = 0.7;
-                ctx.fillStyle = '#000';
-                ctx.fillRect(0, canvas.height/2 - 56, canvas.width, 112);
-                ctx.globalAlpha = 1;
-                ctx.fillStyle = '#fff';
-                ctx.textAlign = 'center';
-                ctx.font = 'bold 34px system-ui';
-                if (typeof cd === 'number' && cd > 0){
-                    ctx.fillText('Spiel startet in ' + cd, canvas.width/2, canvas.height/2 + 12);
-                } else {
-                    ctx.fillText('Warte auf Spieler...', canvas.width/2, canvas.height/2 + 12);
-                }
-            }
-            ctx.restore();
-        }
-
-         // Lokaler Countdown Overlay (nach Tor im lokalen Spiel)
-         if (mode !== 'online' && localCountdownActive){
-            ctx.save();
-            ctx.globalAlpha = 0.7;
-            ctx.fillStyle = '#000';
-            ctx.fillRect(0, canvas.height/2 - 56, canvas.width, 112);
-            ctx.globalAlpha = 1;
-            ctx.fillStyle = '#fff';
-            ctx.textAlign = 'center';
-            ctx.font = 'bold 34px system-ui';
-            ctx.fillText('Weiter in ' + Math.ceil(localCountdown), canvas.width/2, canvas.height/2 + 12);
-            ctx.restore();
-        }
-
          // Bot-Status im HUD anzeigen
          if (botStateEl){
              if (cars[1] && cars[1].isBot){
@@ -1323,6 +1286,7 @@
     const joinBlueBtn = document.getElementById('joinBlue');
     const joinRedBtn  = document.getElementById('joinRed');
     const lobbyLeaveBtn = document.getElementById('lobbyLeave');
+    const lobbyCopyBtn = document.getElementById('lobbyCopyBtn');
 
     function enterLobby(){
         // hide main menu, show lobby (immediate when clicking join/host)
@@ -1398,6 +1362,15 @@
         // leave room locally: close connection and return to menu
         if (NET.ws) netDisconnect();
         leaveLobby();
+    });
+    lobbyCopyBtn?.addEventListener('click', () => {
+        const code = NET.roomCode || '';
+        if (!code) return;
+        navigator.clipboard.writeText(code).then(() => {
+            const origText = lobbyCopyBtn.textContent;
+            lobbyCopyBtn.textContent = 'Kopiert!';
+            setTimeout(() => { lobbyCopyBtn.textContent = origText; }, 2000);
+        }).catch(err => console.warn('Copy failed:', err));
     });
 
     // ---------- Adjust netConnect message handling ----------
@@ -1614,14 +1587,16 @@
         if (localCountdownActive){
             updateCountdownRing(localCountdown);
             showCountdown(localCountdown, 3, 'Weiter in');
+        } else if (mode === 'online' && NET.lastState && typeof NET.lastState.countdown === 'number' && NET.lastState.countdown > 0){
+            // server countdown active
+            updateCountdownRing(NET.lastState.countdown);
+            showCountdown(NET.lastState.countdown, 3, 'Spiel startet in');
         } else {
-            // if no local/countdown active and no server countdown, hide overlay
-            // server overlay handled by ws messages; local hide here
-            if (!(NET.lastState && typeof NET.lastState.countdown === 'number' && NET.lastState.countdown > 0)){
-                hideCountdown();
-            }
+            // no countdown active
+            hideCountdown();
         }
     };
+
 </script>
 </body>
 </html>
