@@ -319,8 +319,8 @@
                  const add = msg.car.length - cars.length;
                  for (let k=0;k<add;k++){
                      const idx = cars.length;
--                    const side = (idx < (msg.car.length/2)) ? 'left' : 'right';
-+                    const side = (idx % 2 === 0) ? 'left' : 'right';
+                    // fixe: side-Berechnung ohne diff-marker
+                    const side = (idx % 2 === 0) ? 'left' : 'right';
                      const controls = (idx===0) ? { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' }
                                     : (idx===1) ? { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
                                     : { up:null, down:null, left:null, right:null, boost:null };
@@ -934,7 +934,7 @@
          running = true;
          lastT = performance.now();
          requestAnimationFrame(loop);
-     }
+    }
 
     function start(){
         ui.style.display = 'none';
@@ -1046,21 +1046,24 @@
          step(dt);
 
          drawField();
-          ball.draw();
-          cars.forEach(c => c.draw());
+         ball.draw();
+         cars.forEach(c => c.draw());
 
-+         // Namen anzeigen (lokal oder online)
-+         if (mode === 'online'){
-+             cars.forEach((car, idx) => {
-+                 const name = NET.playerNames[idx] || ('Spieler ' + (idx+1));
-+                 ctx.globalAlpha = 0.95;
-+                 ctx.fillStyle = car.color;
-+                 ctx.font = 'bold 13px system-ui';
-+                 ctx.textAlign = 'center';
-+                 ctx.fillText(name, car.pos.x, car.pos.y - car.r - 12);
-+                 ctx.globalAlpha = 1;
-+             });
-+         }
+         // Namen anzeigen (lokal oder online)
+         if (mode === 'online'){
+             cars.forEach((car, idx) => {
+                 const name = NET.playerNames[idx] || ('Spieler ' + (idx+1));
+                 ctx.save();
+                 ctx.globalAlpha = 0.95;
+                 ctx.fillStyle = car.color;
+                 ctx.font = 'bold 13px system-ui';
+                 ctx.textAlign = 'center';
+                 // Name höher platzieren, damit er über der Boost/Energieleiste sitzt
+                 ctx.fillText(name, car.pos.x, car.pos.y - car.r - 28);
+                 ctx.globalAlpha = 1;
+                 ctx.restore();
+             });
+         }
 
           // Bot-Status im HUD anzeigen
           if (botStateEl){
@@ -1074,7 +1077,7 @@
           }
 
           requestAnimationFrame(loop);
-     }
+    }
 
     // ---------- UI: Init zweistufige Auswahl ----------
     function initUI(){
@@ -1104,8 +1107,8 @@
                  await netConnect();
                  const maxP = parseInt(document.getElementById('onVariant')?.value || '2', 10) || 2;
                  expectedPlayers = maxP;
--                wsSend({ type:'create_room', maxPlayers: maxP });
-+                wsSend({ type:'create_room', maxPlayers: maxP, playerName });
+                 // sauber senden (ohne diff-marker)
+                 wsSend({ type:'create_room', maxPlayers: maxP, playerName });
              }catch(e){ console.warn(e); }
          });
 
@@ -1114,13 +1117,14 @@
              const code = (document.getElementById('onCode')?.value || '').trim().toUpperCase();
              if (!code){ netSetStatus('Code fehlt'); return; }
              try{
-+                const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
+                 const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
                  expectedPlayers = parseInt(document.getElementById('onVariant')?.value || '2',10) || 2;
                  await netConnect();
--                wsSend({ type:'join_room', code });
-+                wsSend({ type:'join_room', code, playerName });
+                 wsSend({ type:'join_room', code, playerName });
              }catch(e){ console.warn(e); }
          });
+
+         // ...existing code...
     }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initUI);
