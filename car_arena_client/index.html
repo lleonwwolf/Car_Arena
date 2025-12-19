@@ -51,18 +51,41 @@
 <div id="ui">
     <div class="card">
         <h1>Car Ball Arena</h1>
-        <div class="row">
-            <button id="pvp" class="primary">Spieler vs Spieler</button>
-            <button id="pve">Spieler vs Bot</button>
+
+        <!-- Erste Wahl: Lokal oder Online (keine weiteren Buttons sichtbar bis Auswahl) -->
+        <div class="row" id="modeSelect" style="margin-top:6px;">
+            <button id="btnLocalChoice" class="primary">Lokal</button>
+            <button id="btnOnlineChoice">Online</button>
         </div>
+
+        <!-- Local-Options (versteckt bis "Lokal" gewählt) -->
+        <div id="localOptions" style="margin-top:12px; display:none;">
+            <div class="row">
+                <button id="pvp" class="primary">Spieler vs Spieler</button>
+                <button id="pve">Spieler vs Bot</button>
+            </div>
+        </div>
+
         <div class="divider"></div>
         <h2 style="margin:14px 0 8px; font-size:16px; font-weight:800;">Online (Server‑Authoritative)</h2>
-        <div class="row" style="gap:10px; flex-wrap:wrap;">
-            <button id="onHost" class="primary">Online Host</button>
-            <input id="onCode" class="input" placeholder="ROOM CODE" maxlength="6" style="width:140px; text-transform:uppercase;" />
-            <button id="onJoin">Join</button>
+        <!-- Online-Options (versteckt bis "Online" gewählt) -->
+        <div id="onlineOptions" style="gap:10px; flex-wrap:wrap; display:none;">
+            <!-- Variantenauswahl: 1v1 oder 2v2 -->
+            <div class="row" style="margin-bottom:8px; align-items:center;">
+                <label style="font-weight:700; margin-right:8px; line-height:36px;">Variante:</label>
+                <select id="onVariant" class="input" style="width:120px;">
+                    <option value="2">1 vs 1</option>
+                    <option value="4">2 vs 2</option>
+                </select>
+            </div>
+
+            <div class="row" style="gap:10px; flex-wrap:wrap;">
+                <button id="onHost" class="primary">Online Host</button>
+                <input id="onCode" class="input" placeholder="ROOM CODE" maxlength="6" style="width:140px; text-transform:uppercase;" />
+                <button id="onJoin">Join</button>
+            </div>
+            <p id="onStatus" style="margin-top:10px; color:var(--muted); font-size:13px;">Status: Offline</p>
         </div>
-        <p id="onStatus" style="margin-top:10px; color:var(--muted); font-size:13px;">Status: Offline</p>
 
         <p style="margin-top:12px; color:var(--muted)">
             <b>Spieler 1</b>: <span class="kbd">W</span> hoch · <span class="kbd">S</span> runter · <span class="kbd">A</span> links · <span class="kbd">D</span> rechts · <span class="kbd">Space</span> Boost
@@ -146,6 +169,9 @@
         seq: 0,
     };
 
+    // client-seitige Erwartung (für Anzeige bevor Server bestätigt)
+    let expectedPlayers = 2;
+
     function netSetStatus(text){
         const el = document.getElementById('onStatus');
         if (el) el.textContent = 'Status: ' + text;
@@ -209,6 +235,9 @@
                 try{ msg = JSON.parse(ev.data); }catch{ return; }
 
                 if (msg.type === 'room_created'){
+                    // Server gibt nun maxPlayers zurück
+                    NET.roomMaxPlayers = msg.maxPlayers || 2;
+                    expectedPlayers = NET.roomMaxPlayers;
                     NET.roomCode = msg.code;
                     NET.playerIndex = msg.playerIndex;
                     NET.lastState = null;
@@ -217,6 +246,8 @@
                     startOnline();
                     netSetStatus('Host • Code ' + NET.roomCode);
                 } else if (msg.type === 'join_ok'){
+                    NET.roomMaxPlayers = msg.maxPlayers || 2;
+                    expectedPlayers = NET.roomMaxPlayers;
                     NET.roomCode = msg.code;
                     NET.playerIndex = msg.playerIndex;
                     NET.lastState = null;
@@ -254,7 +285,7 @@
             NET.seq++;
             const input = netLocalInput();
             wsSend({ type:'input', input:{...input, seq: NET.seq }});
-        }, 66); // ~30 Hz
+        }, 66); // ~60 Hz
     }
 
     function applyServerState(msg){
@@ -271,13 +302,35 @@
             ball.vel.x = msg.ball.vx || 0;
             ball.vel.y = msg.ball.vy || 0;
         }
-        if (msg.car && msg.car.length >= 2){
-            for (let i=0;i<2;i++){
+        if (msg.car && Array.isArray(msg.car)){
+            // stelle sicher, dass lokale Anzeige genug Cars hat
+            if (cars.length < msg.car.length){
+                const add = msg.car.length - cars.length;
+                for (let k=0;k<add;k++){
+                    const idx = cars.length;
+                    const side = (idx < (msg.car.length/2)) ? 'left' : 'right';
+                    const controls = (idx===0) ? { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' }
+                                   : (idx===1) ? { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
+                                   : { up:null, down:null, left:null, right:null, boost:null };
+                    cars.push(new Car({
+                        x: canvas.width/2, y: canvas.height/2,
+                        color: (idx%2===0) ? getCss('--blue') : getCss('--red'),
+                        side,
+                        controls,
+                        isBot:false
+                    }));
+                }
+            }
+            for (let i=0;i<msg.car.length && i<cars.length;i++){
                 cars[i].pos.x = msg.car[i].x;
                 cars[i].pos.y = msg.car[i].y;
                 cars[i].vel.x = msg.car[i].vx || 0;
                 cars[i].vel.y = msg.car[i].vy || 0;
-                if (msg.car[i].energy !== undefined) cars[i].energy = msg.car[i].energy;
+            }
+            if (Array.isArray(msg.energy)){
+                for (let i=0;i<msg.energy.length && i<cars.length;i++){
+                    if (msg.energy[i] !== undefined) cars[i].energy = msg.energy[i];
+                }
             }
         }
     }
@@ -375,6 +428,7 @@
             const enemyGoal = (this.side === 'right') ? goalLeft  : goalRight;
 
             const opponent = cars[0] === this ? cars[1] : cars[0];
+            const self = cars[0] === this ? cars[0] : cars[1];
 
             // Prediction
             const pBall = ball.pos.clone().add(ball.vel.clone().mul(CFG.botPrediction));
@@ -428,7 +482,7 @@
                     // Nicht gefährlich: wenn Gegner klar am Ball -> markieren, sonst Ball nehmen oder chasen
                     if (oppPossess) mode = 'MARK';
                     else {
-                        const advantage = (distBotBall + 65 < distOppBall) || (distOppBall > 235);
+                        const advantage = (distBotBall + 55 < distOppBall) || (distOppBall > 235);
                         mode = advantage ? 'DRIBBLE' : 'CHASE';
                     }
                 }
@@ -442,9 +496,9 @@
             let mode = this.ai.mode;
 
             // Wenn DRIBBLE komisch wird (Bot läuft weg / zittert), dann kurz auf CHASE umschalten
-            if (mode === 'DRIBBLE' && this.ai.stall > 14 && distBotBall > 220){
+            if (mode === 'DRIBBLE' && this.ai.stall > 14 && distBotBall > 200){
                 this.ai.mode = 'CHASE';
-                this.ai.until = now + 260;
+                this.ai.until = now + 10060;
                 this.ai.stall = 0;
                 mode = 'CHASE';
             }
@@ -528,12 +582,12 @@
                 // Fußball-like: Gegner begleiten, Schussbahn schließen, Chance zum Abnehmen nutzen
                 const threat = opponent.pos.clone();
                 const blockDir = threat.clone().sub(ownGoal).norm();
-                const blockDist = danger ? 250 : 360;
+                const blockDist = danger ? 280 : 380;
                 desired = ownGoal.clone().add(blockDir.mul(blockDist));
 
                 // etwas zur Ballseite ziehen, um Pässe/Dribbling abzufangen
-                desired.x += (pBall.x - desired.x) * 0.12;
-                desired.y += (pBall.y - desired.y) * 0.18;
+                desired.x += (pBall.x - desired.x) * 0.1;
+                desired.y += (pBall.y - desired.y) * 0.14;
 
                 if (interceptY !== null) desired.y = interceptY;
 
@@ -552,6 +606,19 @@
                     if (safeToTake && distBotBall < 170) desired = pBall.clone();
                 } else {
                     // CHASE: aktiv zum Ball (aber darf auch mal warten, wenn Position gut)
+                    /*if((self.pos.clone().add(ball.pos).add(ball.pos)).norm().sub(ball.pos.clone().add(ownGoal).norm()) <= 0.1 || (self.pos.clone().add(ball.pos).add(ball.pos)).norm().sub(ball.pos.clone().add(ownGoal).norm()) >=0.1)
+                    {
+                        if(ball.pos.y>540/2){
+                            desired = pBall.clone().add();
+
+                        }
+                        else{
+
+                        }
+                    }
+                    else {
+
+                    }*/
                     desired = pBall.clone();
                 }
             }
@@ -803,55 +870,57 @@
         cars[1].energy = 100;
     }
 
-    function reset(keepScore=false){
-        cars = [
-            // Spieler 1: A links / D rechts
-            new Car({
-                x:200,
-                y:canvas.height/2,
-                color:getCss('--blue'),
-                side:'left',
-                controls:{ up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' },
-                isBot:false
-            }),
-            new Car({
-                x:canvas.width-200,
-                y:canvas.height/2,
-                color:getCss('--red'),
-                side:'right',
-                controls:{ up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' },
-                isBot:(mode==='pve')
-            })
-        ];
-        ball = new Ball(canvas.width/2, canvas.height/2);
-        if (!keepScore) score = [0,0];
-        s1El.textContent = score[0];
-        s2El.textContent = score[1];
-        kickoff();
-    }
+    function reset(keepScore=false, playersCount=2){
+        cars = [];
+        for (let i=0;i<playersCount;i++){
+            const side = (i < playersCount/2) ? 'left' : 'right';
+            const x = (side === 'left') ? 200 + (i*12) : canvas.width - 200 - ((i-(playersCount/2))*12);
+            const y = canvas.height/2 + ((i % 2 === 0) ? -40 : 40);
+            const controls = (i === 0) ? { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' }
+                            : (i === 1) ? { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
+                            : { up:null, down:null, left:null, right:null, boost:null };
+            cars.push(new Car({
+                x, y,
+                color: i%2===0 ? getCss('--blue') : getCss('--red'),
+                side,
+                controls,
+                isBot: (mode==='pve' && i===1) ? true : false
+            }));
+        }
+         ball = new Ball(canvas.width/2, canvas.height/2);
+         if (!keepScore) score = [0,0];
+         s1El.textContent = score[0];
+         s2El.textContent = score[1];
+         kickoff();
+     }
 
     function showMenu(){
         running = false;
         if (mode==='online') netDisconnect();
         ui.style.display = 'grid';
         hud.hidden = true;
+        // Hide all option panels, show only main choice
+        const lo = document.getElementById('localOptions');
+        const on = document.getElementById('onlineOptions');
+        if (lo) lo.style.display = 'none';
+        if (on) on.style.display = 'none';
     }
 
 
     function startOnline(){
-        // Online: wir starten das Rendering, State kommt vom Server
-        ui.style.display = 'none';
-        hud.hidden = false;
-        // kein Bot im Online-Modus
-        reset(false);
-        cars[0].isBot = false;
-        cars[1].isBot = false;
-        // Input senden
-        netStartSending();
-        running = true;
-        lastT = performance.now();
-        requestAnimationFrame(loop);
-    }
+         // Online: wir starten das Rendering, State kommt vom Server
+         ui.style.display = 'none';
+         hud.hidden = false;
+         // lokale Anzeige mit erwarteter Anzahl (2 oder 4)
+         reset(false, expectedPlayers);
+         // kein Bot im Online-Modus (alle echten Spieler)
+         cars.forEach(c => { if (c) c.isBot = false; });
+         // Input senden
+         netStartSending();
+         running = true;
+         lastT = performance.now();
+         requestAnimationFrame(loop);
+     }
 
     function start(){
         ui.style.display = 'none';
@@ -971,7 +1040,7 @@
             if (cars[1] && cars[1].isBot){
                 const m = cars[1].ai?.mode || '';
                 const e = Math.round(cars[1].energy);
-                botStateEl.textContent = `Bot: ${botModeLabel(m)} · Energy: ${e}%`;
+                botStateEl.textContent = `Bot: ${botModeLabel(m)} · Energy: ${e}% · commit: ${(cars[1].ai.until.toFixed(3)-lastT.toFixed(3)).toFixed(1)}s`;
             } else {
                 botStateEl.textContent = '';
             }
@@ -980,26 +1049,53 @@
         requestAnimationFrame(loop);
     }
 
-    // ---------- UI ----------
-    document.getElementById('pvp').onclick = () => { mode='pvp'; start(); };
-    document.getElementById('pve').onclick = () => { mode='pve'; start(); };
+    // ---------- UI: Init zweistufige Auswahl ----------
+    function initUI(){
+        const show = id => { const e = document.getElementById(id); if (e) e.style.display = ''; };
+        const hide = id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; };
 
-    document.getElementById('onHost').onclick = async () => {
-        try{
-            await netConnect();
-            wsSend({ type:'create_room' });
-        }catch(e){ console.warn(e); }
-    };
-    document.getElementById('onJoin').onclick = async () => {
-        const code = (document.getElementById('onCode').value || '').trim().toUpperCase();
-        if (!code){ netSetStatus('Code fehlt'); return; }
-        try{
-            await netConnect();
-            wsSend({ type:'join_room', code });
-        }catch(e){ console.warn(e); }
-    };
+        // Hauptwahl sichtbar, Panels versteckt (sicherstellen)
+        hide('localOptions'); hide('onlineOptions');
 
-    // initial menu visible
+        // Choice buttons
+        const bLocal = document.getElementById('btnLocalChoice');
+        const bOnline = document.getElementById('btnOnlineChoice');
+        if (bLocal) bLocal.addEventListener('click', () => { show('localOptions'); hide('onlineOptions'); });
+        if (bOnline) bOnline.addEventListener('click', () => { show('onlineOptions'); hide('localOptions'); });
+
+        // Local action buttons
+        const pvp = document.getElementById('pvp');
+        const pve = document.getElementById('pve');
+        if (pvp) pvp.addEventListener('click', () => { mode = 'pvp'; start(); });
+        if (pve) pve.addEventListener('click', () => { mode = 'pve'; start(); });
+
+        // Online Host / Join
+        const onHost = document.getElementById('onHost');
+        if (onHost) onHost.addEventListener('click', async () => {
+            try{
+                await netConnect();
+                const maxP = parseInt(document.getElementById('onVariant')?.value || '2', 10) || 2;
+                expectedPlayers = maxP;
+                wsSend({ type:'create_room', maxPlayers: maxP });
+            }catch(e){ console.warn(e); }
+        });
+
+        const onJoin = document.getElementById('onJoin');
+        if (onJoin) onJoin.addEventListener('click', async () => {
+            const code = (document.getElementById('onCode')?.value || '').trim().toUpperCase();
+            if (!code){ netSetStatus('Code fehlt'); return; }
+            try{
+                expectedPlayers = parseInt(document.getElementById('onVariant')?.value || '2',10) || 2;
+                await netConnect();
+                wsSend({ type:'join_room', code });
+            }catch(e){ console.warn(e); }
+        });
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initUI);
+    else initUI();
+
+    // initial menu sichtbar
 
     showMenu();
 </script>
