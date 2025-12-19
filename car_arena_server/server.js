@@ -211,6 +211,23 @@ function stepRoom(room, dt){
     car.p.add(car.v.clone().mul(dt * CFG.tickHz));
   }
 
+  // --- enforce car bounds per-room so players can't drive outside the field on the server ---
+  // Mirror client logic: allow cars to enter the goal mouth but not pass the field bounds.
+  // Use same minX/maxX computation as client (no extra car-radius offset) so client/server stay consistent.
+  for (let i=0;i<room.maxPlayers;i++){
+    const car = room.car[i];
+    const p = CFG.pad;
+    const cy = CFG.h/2;
+    const halfG = CFG.goalH/2;
+    const inGoalMouth = Math.abs(car.p.y - cy) < halfG;
+    // same as client: if in goal mouth allow deeper x (pad - goalDepth), else pad
+    const minX = inGoalMouth ? (p - CFG.goalW) : p;
+    const maxX = inGoalMouth ? (CFG.w - (p - CFG.goalW)) : (CFG.w - p);
+    // clamp centers exactly like client (client clamps center to minX..maxX)
+    car.p.x = clamp(car.p.x, minX, maxX);
+    car.p.y = clamp(car.p.y, p, CFG.h - p);
+  }
+
   // ball
   const ball = room.ball;
   ball.v.mul(CFG.ballDrag);
