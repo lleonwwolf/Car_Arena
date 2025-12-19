@@ -272,9 +272,14 @@ function stepRoom(room, dt){
 
   const scorer = goalCheck(room);
   if (scorer !== null){
-    // send goal event + reset
+    // send goal event and start server-side countdown before next kickoff
     broadcastRoom(room, { type:"goal", scorer, score: room.score, t: nowMs() });
-    resetKickoff(room, scorer);
+    // pause the match and start 3s countdown; resetKickoff will happen when countdown reaches 0
+    room.started = false;
+    room.countdownRemaining = 3;
+    room.countdownLastTick = nowMs();
+    // inform clients immediately about countdown state
+    broadcastRoom(room, { type:'countdown', remaining: room.countdownRemaining });
   }
 }
 
