@@ -75,7 +75,27 @@ const CFG = {
 // ---------- Room state ----------
 const rooms = new Map(); // code -> Room
 
-function createRoom(maxPlayers = 2) {
+// Liste erlaubter, nicht-feldbezogener Schlüssel (Server akzeptiert nur diese)
+const ALLOWED_OVERRIDES = new Set([
+  'carAccel','carMaxV','carDrag',
+  'boostAccelMul','boostMaxMul','boostDrain','boostRegen',
+  'ballDrag','wallBounce','kick'
+]);
+
+function makeRoomCfg(base, overrides){
+  // Erzeuge eine Raum-spezifische CFG mit erlaubten Overrides
+  const cfg = { ...base };
+  if (overrides && typeof overrides === 'object'){
+    for (const [k,v] of Object.entries(overrides)){
+      if (ALLOWED_OVERRIDES.has(k) && typeof v === 'number'){
+        cfg[k] = v;
+      }
+    }
+  }
+  return cfg;
+}
+
+function createRoom(maxPlayers = 2, overrides = null) {
   maxPlayers = clamp(Number(maxPlayers) || 2, 2, 4);
   const code = makeCode();
   const room = {
@@ -97,7 +117,21 @@ function createRoom(maxPlayers = 2) {
     // neue Lobby/Match Felder
     started: false,               // true wenn Spiel läuft
     countdownRemaining: 0,        // seconds left (int), 0 = no countdown
-    countdownLastTick: 0          // timestamp ms für das nächste decrement
+    countdownLastTick: 0,          // timestamp ms für das nächste decrement
+
+    // Raum-spezifische cfg (nur nicht-Feld-Werte)
+    cfg: makeRoomCfg({
+      carAccel: CFG.carAccel,
+      carMaxV: CFG.carMaxV,
+      carDrag: CFG.carDrag,
+      boostAccelMul: CFG.boostAccelMul,
+      boostMaxMul: CFG.boostMaxMul,
+      boostDrain: CFG.boostDrain,
+      boostRegen: CFG.boostRegen,
+      ballDrag: CFG.ballDrag,
+      wallBounce: CFG.wallBounce,
+      kick: CFG.kick
+    }, overrides || null),
   };
 
   // Abwechselnd links/rechts: 0,2 links; 1,3 rechts
@@ -180,6 +214,9 @@ function goalCheck(room){
 function stepRoom(room, dt){
   dt = clamp(dt, 0, 1/30); // safety
 
+  // Kurz-Referenz
+  const RC = room.cfg;
+
   // cars from inputs (variable count)
   for (let i=0;i<room.maxPlayers;i++){
     const car = room.car[i];
@@ -194,16 +231,16 @@ function stepRoom(room, dt){
     const a = new Vec(ax, ay);
     const hasMove = (ax !== 0 || ay !== 0);
 
-    let accel = CFG.carAccel;
-    let maxV  = CFG.carMaxV;
+    let accel = RC.carAccel;
+    let maxV  = RC.carMaxV;
 
     const wantsBoost = !!inp.boost && hasMove && room.energy[i] > 0.1;
     if (wantsBoost){
-      accel *= CFG.boostAccelMul;
-      maxV  *= CFG.boostMaxMul;
-      room.energy[i] = Math.max(0, room.energy[i] - CFG.boostDrain * dt);
+      accel *= RC.boostAccelMul;
+      maxV  *= RC.boostMaxMul;
+      room.energy[i] = Math.max(0, room.energy[i] - RC.boostDrain * dt);
     } else {
-      room.energy[i] = Math.min(100, room.energy[i] + CFG.boostRegen * dt);
+      room.energy[i] = Math.min(100, room.energy[i] + RC.boostRegen * dt);
     }
 
     if (a.len() > 0) a.norm().mul(accel);
@@ -212,54 +249,50 @@ function stepRoom(room, dt){
 
     const sp = car.v.len();
     if (sp > maxV) car.v.mul(maxV / sp);
-    car.v.mul(CFG.carDrag);
+    car.v.mul(RC.carDrag);
     car.p.add(car.v.clone().mul(dt * CFG.tickHz));
   }
 
-  // --- enforce car bounds per-room so players can't drive outside the field on the server ---
-  // Mirror client logic: allow cars to enter the goal mouth but not pass the field bounds.
-  // Use same minX/maxX computation as client (no extra car-radius offset) so client/server stay consistent.
+  // bounds enforcement (nutzt Feld-Werte aus global CFG)
   for (let i=0;i<room.maxPlayers;i++){
     const car = room.car[i];
     const p = CFG.pad;
     const cy = CFG.h/2;
     const halfG = CFG.goalH/2;
     const inGoalMouth = Math.abs(car.p.y - cy) < halfG;
-    // same as client: if in goal mouth allow deeper x (pad - goalDepth), else pad
     const minX = inGoalMouth ? (p - CFG.goalW) : p;
     const maxX = inGoalMouth ? (CFG.w - (p - CFG.goalW)) : (CFG.w - p);
-    // clamp centers exactly like client (client clamps center to minX..maxX)
     car.p.x = clamp(car.p.x, minX, maxX);
     car.p.y = clamp(car.p.y, p, CFG.h - p);
   }
 
   // ball
   const ball = room.ball;
-  ball.v.mul(CFG.ballDrag);
+  ball.v.mul(RC.ballDrag);
   ball.p.add(ball.v.clone().mul(dt * CFG.tickHz));
 
-  // wall bounce (ball)
+  // wall bounce (ball) – Feld-Werte bleiben global
   const minX = CFG.pad + CFG.ballR;
   const maxX = CFG.w - CFG.pad - CFG.ballR;
   const minY = CFG.pad + CFG.ballR;
   const maxY = CFG.h - CFG.pad - CFG.ballR;
 
-  if (ball.p.x < minX && (ball.p.y <(CFG.h/2) - (CFG.goalH/2) || ball.p.y >(CFG.h/2) + (CFG.goalH/2))){ ball.p.x = minX; ball.v.x *= -CFG.wallBounce; }
-  if (ball.p.x > maxX && (ball.p.y <(CFG.h/2) - (CFG.goalH/2) || ball.p.y >(CFG.h/2) + (CFG.goalH/2))){ ball.p.x = maxX; ball.v.x *= -CFG.wallBounce; }
-  if (ball.p.y < minY){ ball.p.y = minY; ball.v.y *= -CFG.wallBounce; }
-  if (ball.p.y > maxY){ ball.p.y = maxY; ball.v.y *= -CFG.wallBounce; }
+  if (ball.p.x < minX && (ball.p.y <(CFG.h/2) - (CFG.goalH/2) || ball.p.y >(CFG.h/2) + (CFG.goalH/2))){ ball.p.x = minX; ball.v.x *= -RC.wallBounce; }
+  if (ball.p.x > maxX && (ball.p.y <(CFG.h/2) - (CFG.goalH/2) || ball.p.y >(CFG.h/2) + (CFG.goalH/2))){ ball.p.x = maxX; ball.v.x *= -RC.wallBounce; }
+  if (ball.p.y < minY){ ball.p.y = minY; ball.v.y *= -RC.wallBounce; }
+  if (ball.p.y > maxY){ ball.p.y = maxY; ball.v.y *= -RC.wallBounce; }
 
-  // car-ball collisions for all cars
+  // car-ball collisions
   for (let i=0;i<room.maxPlayers;i++){
     const car = room.car[i];
     resolveCircle(
       car.p, car.v, CFG.carR,
       ball.p, ball.v, CFG.ballR,
-      CFG.kick
+      RC.kick
     );
   }
 
-  // car-car collisions (all pairs)
+  // car-car collisions
   for (let i=0;i<room.maxPlayers;i++){
     for (let j=i+1;j<room.maxPlayers;j++){
       resolveCircle(
@@ -294,7 +327,20 @@ function snapshot(room){
     ball: { x: room.ball.p.x, y: room.ball.p.y, vx: room.ball.v.x, vy: room.ball.v.y },
     energy: room.energy,
     started: room.started,
-    countdown: room.countdownRemaining
+    countdown: room.countdownRemaining,
+    // Server teilt die verwendeten nicht-Feld-CFG mit (Clients können kosmetisch angleichen)
+    cfgPartial: {
+      carAcc: room.cfg.carAccel,
+      carMaxSpeed: room.cfg.carMaxV,
+      carDrag: room.cfg.carDrag,
+      boostAccMul: room.cfg.boostAccelMul,
+      boostMaxMul: room.cfg.boostMaxMul,
+      boostDrain: room.cfg.boostDrain,
+      boostRegen: room.cfg.boostRegen,
+      ballDrag: room.cfg.ballDrag,
+      wallRestitution: room.cfg.wallBounce,
+      kickImpulse: room.cfg.kick
+    }
   };
 }
 
@@ -316,16 +362,34 @@ wss.on("connection", (ws) => {
 
     if (msg.type === "create_room"){
       const maxP = clamp(msg.maxPlayers || 2, 2, 4);
-      const room = createRoom(maxP);
+      const room = createRoom(maxP, msg.settings || null);
       room.clients.add(ws);
-      room.players[0] = ws; // creator becomes p0
+      room.players[0] = ws;
       room.playerNames[0] = (msg.playerName || 'Player').slice(0, 20);
       ws.roomCode = room.code;
       ws.playerIndex = 0;
 
-      send(ws, { type:"room_created", code: room.code, playerIndex: 0, cfg: CFG, maxPlayers: room.maxPlayers });
+      send(ws, {
+        type:"room_created",
+        code: room.code,
+        playerIndex: 0,
+        cfg: CFG,                // vollständige Feld-CFG (geometrie etc.)
+        maxPlayers: room.maxPlayers,
+        // zusätzlich: die verwendeten nicht-Feld Werte
+        cfgPartial: {
+          carAcc: room.cfg.carAccel,
+          carMaxSpeed: room.cfg.carMaxV,
+          carDrag: room.cfg.carDrag,
+          boostAccMul: room.cfg.boostAccelMul,
+          boostMaxMul: room.cfg.boostMaxMul,
+          boostDrain: room.cfg.boostDrain,
+          boostRegen: room.cfg.boostRegen,
+          ballDrag: room.cfg.ballDrag,
+          wallRestitution: room.cfg.wallBounce,
+          kickImpulse: room.cfg.kick
+        }
+      });
       resetKickoff(room);
-      // try to start if already full (rare for host-only create)
       tryStartCountdown(room);
       return;
     }
@@ -348,9 +412,26 @@ wss.on("connection", (ws) => {
       ws.roomCode = code;
       ws.playerIndex = idx;
 
-      send(ws, { type:"join_ok", code, playerIndex: idx, cfg: CFG, maxPlayers: room.maxPlayers });
+      send(ws, {
+        type:"join_ok",
+        code,
+        playerIndex: ws.playerIndex,
+        cfg: CFG,
+        maxPlayers: room.maxPlayers,
+        cfgPartial: {
+          carAcc: room.cfg.carAccel,
+          carMaxSpeed: room.cfg.carMaxV,
+          carDrag: room.cfg.carDrag,
+          boostAccMul: room.cfg.boostAccelMul,
+          boostMaxMul: room.cfg.boostMaxMul,
+          boostDrain: room.cfg.boostDrain,
+          boostRegen: room.cfg.boostRegen,
+          ballDrag: room.cfg.ballDrag,
+          wallRestitution: room.cfg.wallBounce,
+          kickImpulse: room.cfg.kick
+        }
+      });
       broadcastRoom(room, { type:"player_joined", count: room.clients.size, playerNames: room.playerNames });
-      // wenn Lobby jetzt voll und alle Namen gesetzt -> start countdown
       tryStartCountdown(room);
       return;
     }
