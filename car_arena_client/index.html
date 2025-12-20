@@ -566,6 +566,7 @@
                     // enter lobby (don't start game yet)
                     enterLobby();
                     netSetStatus('Host • Code ' + NET.roomCode);
+                    if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
                 } else if (msg.type === 'join_ok'){
                     NET.roomMaxPlayers = msg.maxPlayers || 2;
                     expectedPlayers = NET.roomMaxPlayers;
@@ -577,6 +578,7 @@
                     // enter lobby (don't start game yet)
                     enterLobby();
                     netSetStatus('Joined • Code ' + NET.roomCode);
+                    if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
                 } else if (msg.type === 'join_failed'){
                     netSetStatus('Join failed: ' + (msg.reason || 'unknown'));
                     // show menu again and hide lobby if we had opened it
@@ -584,36 +586,34 @@
                 } else if (msg.type === 'state'){
                     NET.lastState = msg;
                     NET.lastStateAt = performance.now();
-                    // update local name map
                     if (msg.playerNames) NET.playerNames = msg.playerNames;
-                    // update lobby view if visible
+
+                    // LOBBY: sicher referenzieren
+                    const lobbyEl = document.getElementById('lobby');
                     if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
-                    // if server indicates started via snapshot, trigger start
+
                     if (msg.started) {
-                        // server sent started in snapshot: start the online game
                         startOnline();
-                        // hide lobby
                         if (lobbyEl) lobbyEl.style.display = 'none';
                     }
+                    if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
                 } else if (msg.type === 'start'){
-                    // server explicit start message (countdown ended)
                     startOnline();
+                    const lobbyEl = document.getElementById('lobby');
                     if (lobbyEl) lobbyEl.style.display = 'none';
                 } else if (msg.type === 'player_joined' || msg.type === 'player_left'){
-                    // possibly update lobby UI (server may include playerNames)
                     if (msg.playerNames) { NET.playerNames = msg.playerNames; }
+                    const lobbyEl = document.getElementById('lobby');
                     if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
                 } else if (msg.type === 'countdown' || msg.type === 'countdown_cancelled'){
-                    // show info via netSetStatus / lobbyNotice
                     if (msg.type === 'countdown') netSetStatus('Starts in ' + msg.remaining);
                     else netSetStatus('Countdown abgebrochen');
+                    const lobbyEl = document.getElementById('lobby');
                     if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
-                    // Countdown overlay update
                     showCountdown((typeof msg.remaining === 'number') ? msg.remaining : 0, 3, 'Spiel startet in');
                 } else if (msg.type === 'switch_failed'){
                     netSetStatus('Teamwechsel fehlgeschlagen: ' + (msg.reason || 'busy'));
                 } else if (msg.type === 'switch_ok'){
-                    // server confirms new slot: update local index if provided
                     if (typeof msg.newIndex === 'number') NET.playerIndex = msg.newIndex;
                 } else if (msg.type === 'room_closed'){
                     netSetStatus('Room closed');
@@ -1620,7 +1620,6 @@
                     // enter lobby (don't start game yet)
                     enterLobby();
                     netSetStatus('Host • Code ' + NET.roomCode);
-                    // Übernommene CFG vom Server anwenden (falls gesendet)
                     if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
                 } else if (msg.type === 'join_ok'){
                     NET.roomMaxPlayers = msg.maxPlayers || 2;
@@ -1641,38 +1640,34 @@
                 } else if (msg.type === 'state'){
                     NET.lastState = msg;
                     NET.lastStateAt = performance.now();
-                    // update local name map
                     if (msg.playerNames) NET.playerNames = msg.playerNames;
-                    // update lobby view if visible
+
+                    // LOBBY: sicher referenzieren
+                    const lobbyEl = document.getElementById('lobby');
                     if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
-                    // if server indicates started via snapshot, trigger start
+
                     if (msg.started) {
-                        // server sent started in snapshot: start the online game
                         startOnline();
-                        // hide lobby
                         if (lobbyEl) lobbyEl.style.display = 'none';
                     }
-                    // Snapshot kann ebenfalls cfgPartial tragen (optional)
                     if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
                 } else if (msg.type === 'start'){
-                    // server explicit start message (countdown ended)
                     startOnline();
+                    const lobbyEl = document.getElementById('lobby');
                     if (lobbyEl) lobbyEl.style.display = 'none';
                 } else if (msg.type === 'player_joined' || msg.type === 'player_left'){
-                    // possibly update lobby UI (server may include playerNames)
                     if (msg.playerNames) { NET.playerNames = msg.playerNames; }
+                    const lobbyEl = document.getElementById('lobby');
                     if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
                 } else if (msg.type === 'countdown' || msg.type === 'countdown_cancelled'){
-                    // show info via netSetStatus / lobbyNotice
                     if (msg.type === 'countdown') netSetStatus('Starts in ' + msg.remaining);
                     else netSetStatus('Countdown abgebrochen');
+                    const lobbyEl = document.getElementById('lobby');
                     if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
-                    // Countdown overlay update
                     showCountdown((typeof msg.remaining === 'number') ? msg.remaining : 0, 3, 'Spiel startet in');
                 } else if (msg.type === 'switch_failed'){
                     netSetStatus('Teamwechsel fehlgeschlagen: ' + (msg.reason || 'busy'));
                 } else if (msg.type === 'switch_ok'){
-                    // server confirms new slot: update local index if provided
                     if (typeof msg.newIndex === 'number') NET.playerIndex = msg.newIndex;
                 } else if (msg.type === 'room_closed'){
                     netSetStatus('Room closed');
@@ -1814,6 +1809,19 @@
                 document.dispatchEvent(new Event('game:startOnline'));
                 return origStartOnline.apply(this, arguments);
             };
+        }
+    })();
+
+    // Robuste Initialisierung nach DOM-Ready
+    (function safeInit(){
+        const run = () => {
+            try { initUI(); } catch(e){ console.error('initUI error', e); }
+            try { initSliders(); } catch(e){ console.error('initSliders error', e); }
+        };
+        if (document.readyState === 'loading'){
+            document.addEventListener('DOMContentLoaded', run, { once:true });
+        } else {
+            run();
         }
     })();
 </script>
