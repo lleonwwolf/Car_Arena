@@ -672,7 +672,7 @@
                  for (let k=0;k<add;k++){
                      const idx = cars.length;
                      const side = (idx % 2 === 0) ? 'left' : 'right';
-                     const controls = (idx===0) ? { up:'KeyW', down:'KeyS', left:'KeyA', right:'D', boost:'Space' }
+                     const controls = (idx===0) ? { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' }
                                     : (idx===1) ? { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
                                     : { up:null, down:null, left:null, right:null, boost:null };
                      cars.push(new Car({
@@ -1578,104 +1578,64 @@
         if (partial.kickImpulse != null) CFG.kickImpulse = partial.kickImpulse;
     }
 
-    function netConnect(){
-        return new Promise((resolve, reject) => {
-            if (!WS_URL || WS_URL.includes('YOUR-RENDER-SERVICE')){
-                netSetStatus('WS_URL fehlt (im Code eintragen)');
-                reject(new Error('WS_URL not set'));
-                return;
-            }
-
-            netSetStatus('Connecting…');
-            const ws = new WebSocket(WS_URL);
-            NET.ws = ws;
-
-            ws.onopen = () => {
-                NET.connected = true;
-                netSetStatus('Connected');
-                resolve();
-            };
-            ws.onclose = () => {
-                NET.connected = false;
-                netSetStatus('Disconnected');
-            };
-            ws.onerror = (e) => {
-                NET.connected = false;
-                netSetStatus('Error');
-                reject(e);
-            };
-
-            ws.onmessage = (ev) => {
-                let msg;
-                try{ msg = JSON.parse(ev.data); }catch{ return; }
-
-                if (msg.type === 'room_created'){
-                    NET.roomMaxPlayers = msg.maxPlayers || 2;
-                    expectedPlayers = NET.roomMaxPlayers;
-                    NET.roomCode = msg.code;
-                    NET.playerIndex = msg.playerIndex;
-                    NET.lastState = null;
-                    NET.seq = 0;
-                    mode = 'online';
-                    // enter lobby (don't start game yet)
-                    enterLobby();
-                    netSetStatus('Host • Code ' + NET.roomCode);
-                    if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
-                } else if (msg.type === 'join_ok'){
-                    NET.roomMaxPlayers = msg.maxPlayers || 2;
-                    expectedPlayers = NET.roomMaxPlayers;
-                    NET.roomCode = msg.code;
-                    NET.playerIndex = msg.playerIndex;
-                    NET.lastState = null;
-                    NET.seq = 0;
-                    mode = 'online';
-                    // enter lobby (don't start game yet)
-                    enterLobby();
-                    netSetStatus('Joined • Code ' + NET.roomCode);
-                    if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
-                } else if (msg.type === 'join_failed'){
-                    netSetStatus('Join failed: ' + (msg.reason || 'unknown'));
-                    // show menu again and hide lobby if we had opened it
-                    leaveLobby();
-                } else if (msg.type === 'state'){
-                    NET.lastState = msg;
-                    NET.lastStateAt = performance.now();
-                    if (msg.playerNames) NET.playerNames = msg.playerNames;
-
-                    // LOBBY: sicher referenzieren
-                    const lobbyEl = document.getElementById('lobby');
-                    if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
-
-                    if (msg.started) {
-                        startOnline();
-                        if (lobbyEl) lobbyEl.style.display = 'none';
-                    }
-                    if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
-                } else if (msg.type === 'start'){
-                    startOnline();
-                    const lobbyEl = document.getElementById('lobby');
-                    if (lobbyEl) lobbyEl.style.display = 'none';
-                } else if (msg.type === 'player_joined' || msg.type === 'player_left'){
-                    if (msg.playerNames) { NET.playerNames = msg.playerNames; }
-                    const lobbyEl = document.getElementById('lobby');
-                    if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
-                } else if (msg.type === 'countdown' || msg.type === 'countdown_cancelled'){
-                    if (msg.type === 'countdown') netSetStatus('Starts in ' + msg.remaining);
-                    else netSetStatus('Countdown abgebrochen');
-                    const lobbyEl = document.getElementById('lobby');
-                    if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
-                    showCountdown((typeof msg.remaining === 'number') ? msg.remaining : 0, 3, 'Spiel startet in');
-                } else if (msg.type === 'switch_failed'){
-                    netSetStatus('Teamwechsel fehlgeschlagen: ' + (msg.reason || 'busy'));
-                } else if (msg.type === 'switch_ok'){
-                    if (typeof msg.newIndex === 'number') NET.playerIndex = msg.newIndex;
-                } else if (msg.type === 'room_closed'){
-                    netSetStatus('Room closed');
-                    leaveLobby();
-                }
-            };
-        });
+    // Einfaches Lobby-Rendering + Aktionen
+    function enterLobby(){
+        const l = document.getElementById('lobby');
+        if (!l) return;
+        l.style.display = 'block';
+        renderLobby();
     }
+    function leaveLobby(){
+        const l = document.getElementById('lobby');
+        if (l) l.style.display = 'none';
+    }
+    function renderLobby(){
+        const lobbyEl = document.getElementById('lobby');
+        if (!lobbyEl || lobbyEl.style.display === 'none') return;
+
+        const slotsBlue = document.getElementById('slotsBlue');
+        const slotsRed  = document.getElementById('slotsRed');
+        const codeEl    = document.getElementById('lobbyCode');
+        if (codeEl) codeEl.textContent = NET.roomCode || '—';
+
+        const names = NET.playerNames || {};
+        const maxP  = NET.roomMaxPlayers || expectedPlayers || 2;
+        const mkSlot = (name, idx) => {
+            const div = document.createElement('div');
+            div.textContent = name || ('frei #' + (idx+1));
+            div.style.padding = '6px 8px';
+            div.style.borderRadius = '8px';
+            div.style.background = name ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)';
+            return div;
+        };
+
+        if (slotsBlue) slotsBlue.innerHTML = '';
+        if (slotsRed)  slotsRed.innerHTML  = '';
+
+        for (let i=0;i<maxP;i++){
+            const name = names[i] || '';
+            const isLeft = (i % 2 === 0);
+            (isLeft ? slotsBlue : slotsRed)?.appendChild(mkSlot(name, i));
+        }
+
+        const notice = document.getElementById('lobbyNotice');
+        if (notice){
+            const count = Object.values(names).filter(Boolean).length;
+            notice.textContent = (count >= maxP) ? 'Bereit – wartet auf Start' : `Warte auf Spieler… (${count}/${maxP})`;
+        }
+    }
+
+    // Teamwechsel-Buttons und Lobby-Verlassen
+    (function initLobbyActions(){
+        document.getElementById('joinBlue')?.addEventListener('click', () => wsSend({ type:'switch_team', side:'left' }));
+        document.getElementById('joinRed')?.addEventListener('click',  () => wsSend({ type:'switch_team', side:'right' }));
+        document.getElementById('lobbyLeave')?.addEventListener('click', () => { leaveLobby(); showMenu(); });
+        // Kopieren
+        document.getElementById('lobbyCopyBtn')?.addEventListener('click', async () => {
+            if (!NET.roomCode) return;
+            try{ await navigator.clipboard.writeText(NET.roomCode); }catch{}
+        });
+    })();
 
     // ---------- UI: Init zweistufige Auswahl ----------
     function initUI(){
