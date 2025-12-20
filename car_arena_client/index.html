@@ -17,56 +17,95 @@
             --red:#f87171;
             --ball:#fbbf24;
             --good:#22c55e;
+            --shadow-s:
+                inset 0 1px 2px hsla(0, 0%, 100%, 0.1),
+                0 1px 2px hsla(0, 0%, 0%, 0.3),
+                0 2px 4px hsla(0, 0%, 0%, 0.15);
+            --shadow-m:
+                inset 0 2px 4px hsla(0, 0%, 100%, 0.1),
+                0 2px 4px hsla(0, 0%, 0%, 0.3),
+                0 4px 8px hsla(0, 0%, 0%, 0.15);
+            --shadow-l:
+                inset 0 2px 4px hsla(0, 0%, 100%, 0.1),
+                0 4px 6px hsla(0, 0%, 0%, 0.3),
+                0 6px 10px hsla(0, 0%, 0%, 0.15);
         }
-        html,body{height:100%; margin:0; background:radial-gradient(70% 90% at 50% 10%, #1f2a4a 0%, #040712 60%, #020617 100%); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto; overflow:hidden;}
-        canvas{display:block; margin:0 auto; background:linear-gradient(180deg,var(--field1),var(--field2)); border-radius:18px; box-shadow:0 25px 80px rgba(0,0,0,.55);}
+
+        html,body{
+            height:100%; margin:0;
+            background:radial-gradient(70% 90% at 50% 10%, #1f2a4a 0%, #040712 60%, #020617 100%);
+            color:var(--text);
+            font-family:system-ui,-apple-system,Segoe UI,Roboto;
+            overflow:hidden;
+        }
+
+        canvas{
+            display:block; margin:0 auto;
+            background:linear-gradient(180deg,var(--field1),var(--field2));
+            border-radius:18px;
+            box-shadow:0 25px 80px rgba(0,0,0,.55);
+        }
 
         #ui{position:fixed; inset:0; display:grid; place-items:center; padding:18px;}
-        .card{width:min(92vw,540px); background:linear-gradient(180deg,#0b122a,#070b1d); border:1px solid #1f2937; border-radius:18px; padding:22px; box-shadow:0 30px 90px rgba(0,0,0,.7);}
+        .card{
+            width:min(92vw,540px);
+            background:linear-gradient(180deg,#0b122a,#070b1d);
+            border:1px solid #1f2937; border-radius:18px; padding:22px;
+            box-shadow: var(--shadow-l);
+        }
         .card h1{margin:0 0 10px; font-size:28px; letter-spacing:.2px;}
         .card p{margin:0; color:var(--muted); line-height:1.35;}
         .row{display:flex; gap:12px; margin-top:14px;}
-
         .divider{height:1px; background:rgba(255,255,255,0.08); margin:14px 0;}
+
         .input{
             height:42px; padding:0 12px; border-radius:12px;
             border:1px solid rgba(255,255,255,0.10);
             background:rgba(0,0,0,0.28); color:var(--text);
-            outline:none;
+            outline:none; box-shadow: var(--shadow-m);
         }
         .input:focus{border-color:rgba(255,255,255,0.22);}
 
-        button{flex:1; padding:12px 14px; border-radius:14px; border:1px solid #243244; background:#020617; color:var(--text); cursor:pointer; font-size:16px;}
-        button.primary{border:none; background:linear-gradient(135deg,#0ea5e9,#22c55e); color:#041016; font-weight:700;}
+        button{
+            flex:1; padding:12px 14px; border-radius:14px;
+            border:1px solid rgba(36, 50, 68, 0.3);
+            background:#020617; color:var(--text); cursor:pointer; font-size:16px;
+            transition:filter .15s ease-in-out;
+            box-shadow: var(--shadow-s);
+        }
+        button.primary{border:none; background:linear-gradient(135deg,#0ea5e9,#22c55e); color:#041016; font-weight:700; box-shadow: var(--shadow-s);}
         button:hover{filter:brightness(1.08);}
 
-        #hud{position:fixed; top:12px; left:50%; transform:translateX(-50%); display:flex; gap:14px; align-items:center; background:rgba(2,6,23,.55); border:1px solid #1f2937; border-radius:14px; padding:8px 12px; backdrop-filter:blur(10px);}
+        #hud{
+            position:fixed; top:12px; left:50%; transform:translateX(-50%);
+            display:flex; gap:14px; align-items:center;
+            background:rgba(2,6,23,.55);
+            border:1px solid rgba(36, 50, 68, 0.2); border-radius:14px;
+            padding:8px 12px; backdrop-filter:blur(10px);
+            box-shadow: var(--shadow-m);
+        }
         #hud .score{font-size:20px; font-weight:700; letter-spacing:.5px;}
         #hud .hint{font-size:12px; color:var(--muted);}
 
-        .kbd{display:inline-block; padding:2px 6px; border:1px solid #334155; border-bottom-width:2px; border-radius:7px; font-size:12px; color:var(--text); background:#0b1020;}
+        .kbd{
+            display:inline-block; padding:2px 6px;
+            border:1px solid #334155; border-bottom-width:2px; border-radius:7px;
+            font-size:12px; color:var(--text); background:#0b1020;
+            box-shadow: var(--shadow-s);
+        }
 
-        /* Countdown Overlay Styles */
+        /* Countdown Overlay (DOM) */
         #countdownOverlay{
-            position:fixed;
-            left:50%;
-            top:50%;
-            transform:translate(-50%,-50%) scale(.98);
-            width:320px;
-            max-width:88vw;
-            pointer-events:none;
-            display:none;
-            align-items:center;
-            justify-content:center;
-            z-index:10010;
-            text-align:center;
+            position:fixed; left:50%; top:50%; transform:translate(-50%,-50%) scale(.98);
+            width:320px; max-width:88vw; pointer-events:none; display:none;
+            align-items:center; justify-content:center; z-index:10010; text-align:center;
         }
         #countdownOverlay.visible{ display:flex; animation: popIn .28s cubic-bezier(.2,.9,.2,1); pointer-events:auto; transform:translate(-50%,-50%) scale(1); }
         @keyframes popIn { from { transform: translate(-50%,-50%) scale(.9); opacity:0 } to { transform: translate(-50%,-50%) scale(1); opacity:1 } }
-
         #countdownOverlay .backdrop{
-            position:absolute; inset:0; border-radius:18px; background:linear-gradient(180deg, rgba(2,6,23,0.68), rgba(2,6,23,0.78));
-            box-shadow:0 30px 60px rgba(0,0,0,0.6); backdrop-filter:blur(8px);
+            position:absolute; inset:0; border-radius:18px;
+            background:linear-gradient(180deg, rgba(2,6,23,0.68), rgba(2,6,23,0.78));
+            box-shadow: var(--shadow-l); backdrop-filter:blur(8px);
             border:1px solid rgba(255,255,255,0.04);
         }
         #countdownOverlay .box{position:relative; padding:28px 22px; width:100%; display:flex; flex-direction:column; gap:12px; align-items:center;}
@@ -74,20 +113,130 @@
             width:120px; height:120px; border-radius:50%;
             background: conic-gradient(var(--blue) 0deg, rgba(255,255,255,0.06) 0deg);
             display:flex; align-items:center; justify-content:center;
-            box-shadow: inset 0 6px 18px rgba(0,0,0,0.35), 0 8px 30px rgba(2,6,23,0.6);
+            box-shadow: var(--shadow-m);
         }
         #countdownInner{
-            width:84px; height:84px; border-radius:50%; background:linear-gradient(180deg,#071022,#03101a);
+            width:84px; height:84px; border-radius:50%;
+            background:linear-gradient(180deg,#071022,#03101a);
             display:flex; align-items:center; justify-content:center; color:var(--text);
             font-weight:800; font-size:42px; letter-spacing:1px;
+            box-shadow: var(--shadow-s);
         }
         #countdownLabel{ color:var(--muted); font-weight:600; font-size:14px; margin-top:4px; }
+
+        /* Settings Panel (floating, rechts unten) */
+        #settingsPanel{
+            position: fixed;
+            right: 20px;
+            bottom: 20px;
+            z-index:10005;
+            display:none; width:320px; max-width:calc(100vw - 40px); max-height:60vh; overflow-y:auto;
+            background: linear-gradient(180deg, rgba(22,26,43,0.38), rgba(22,26,43,0.58));
+            border:1px solid rgba(255,255,255,0.04); border-radius:18px; padding:16px;
+            box-shadow: var(--shadow-l);
+            /* angenehme Scrollbar (Firefox + WebKit) */
+            scrollbar-width: thin; scrollbar-color: rgba(96,165,250,.45) transparent;
+        }
+        #settingsPanel.visible{ display:block; }
+
+        /* Header nicht mehr relativ positionieren, damit das X am Panel ausgerichtet wird */
+        #settingsPanel .hdr{
+            display:flex; align-items:center; gap:10px; margin-bottom:8px; position:static;
+            padding-right: 0;
+        }
+        #settingsPanel .close{
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 28px;
+            height: 28px;
+            margin: 0;
+            display: grid;
+            place-items: center;
+
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.10);
+            border-radius: 8px;
+            color: var(--muted);
+            font-size: 14px;
+            cursor: pointer;
+            box-shadow: var(--shadow-s);
+        }
+        #settingsPanel .close:hover{ filter:brightness(1.1); }
+
+        .slider-row{ padding:8px 2px; }
+        .slider-label{
+            display:flex; align-items:center; justify-content:space-between; gap:10px;
+            font-size:13px; margin-bottom:6px;
+        }
+        #settingsPanel .value{ font-weight:700; color:var(--muted); }
+
+        #settingsPanel input[type="range"]{
+            -webkit-appearance:none; appearance:none;
+            width:100%; height:10px; border-radius:999px;
+            background: linear-gradient(90deg, rgba(255,255,255,0.10), rgba(255,255,255,0.06));
+            outline:none;
+        }
+        #settingsPanel input[type="range"]::-webkit-slider-runnable-track{
+            height:10px; border-radius:999px;
+            background: linear-gradient(90deg, rgba(96,165,250,0.35), rgba(248,113,113,0.25));
+        }
+        #settingsPanel input[type="range"]::-webkit-slider-thumb{
+            -webkit-appearance:none; appearance:none; margin-top:-6px;
+            width:22px; height:22px; border-radius:50%;
+            background: radial-gradient(circle at 35% 35%, #fff 0%, #e5e7eb 30%, #c7d2fe 60%, #60a5fa 100%);
+            border:1px solid rgba(255,255,255,0.35);
+            box-shadow: var(--shadow-s);
+            cursor:pointer;
+        }
+        #settingsPanel input[type="range"]::-moz-range-track{
+            height:10px; border-radius:999px;
+            background: linear-gradient(90deg, rgba(96,165,250,0.35), rgba(248,113,113,0.25));
+        }
+        #settingsPanel input[type="range"]::-moz-range-thumb{
+            width:22px; height:22px; border-radius:50%;
+            background: radial-gradient(circle at 35% 35%, #fff 0%, #e5e7eb 30%, #c7d2fe 60%, #60a5fa 100%);
+            border:1px solid rgba(255,255,255,0.35);
+            box-shadow: var(--shadow-s);
+            cursor:pointer;
+        }
+
+        /* Preset-Modal */
+        #presetModal{
+            position:fixed; inset:0; z-index:10000; display:none;
+            align-items:center; justify-content:center;
+            backdrop-filter: blur(3px); background: rgba(0,0,0,0.5);
+            pointer-events:auto;
+        }
+        #presetModal.visible{ display:flex; }
+        #presetModal .modal-content{
+            position:relative; width:min(90vw, 500px); max-height:70vh; overflow-y:auto;
+            background: linear-gradient(180deg, #0b122a, #070b1d);
+            border:1px solid #1f2937; border-radius:18px; padding:24px;
+            box-shadow: var(--shadow-l);
+        }
+        #presetModal .modal-close{
+            position:absolute; top:12px; right:12px; width:32px; height:32px; padding:0; font-size:18px; cursor:pointer;
+            background: rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.1); color: var(--text); border-radius:6px;
+            box-shadow: var(--shadow-s);
+        }
+        #presetModal h3{ margin:0 0 16px; font-size:18px; font-weight:800; }
+        .preset-item{
+            display:flex; gap:8px; margin-bottom:10px; padding:10px;
+            background: rgba(255,255,255,0.03); border-radius:10px; align-items:center;
+            box-shadow: var(--shadow-s);
+        }
+        .preset-item .name{ flex:1; font-weight:600; color:var(--text); }
+        .preset-item button{ flex:0; padding:6px 8px; font-size:12px; width:auto; box-shadow: var(--shadow-s); }
     </style>
 </head>
 <body>
 <div id="ui">
     <div class="card">
-        <h1>Car Ball Arena</h1>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h1 style="margin:0;">Car Ball Arena</h1>
+
+        </div>
 
         <!-- Erste Wahl: Lokal oder Online (keine weiteren Buttons sichtbar bis Auswahl) -->
         <div class="row" id="modeSelect" style="margin-top:6px;">
@@ -95,18 +244,25 @@
             <button id="btnOnlineChoice">Online</button>
         </div>
 
+        <div class="divider"></div>
+        <button id="btnSettings" style="width:100%; padding:8px 10px; font-size:14px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); display: none;">Advanced Settings⚙️</button>
+
+
         <!-- Local-Options (versteckt bis "Lokal" gewählt) -->
         <div id="localOptions" style="margin-top:12px; display:none;">
+            <div class="divider"></div>
             <div class="row">
                 <button id="pvp" class="primary">Spieler vs Spieler</button>
                 <button id="pve">Spieler vs Bot</button>
             </div>
+            <div class="divider"></div>
         </div>
 
-        <div class="divider"></div>
+
         <h2 style="margin:14px 0 8px; font-size:16px; font-weight:800;">Online (Server‑Authoritative)</h2>
         <!-- Online-Options (versteckt bis "Online" gewählt) -->
         <div id="onlineOptions" style="gap:10px; flex-wrap:wrap; display:none;">
+            <div class="divider"></div>
             <!-- Variantenauswahl: 1v1 oder 2v2 -->
             <div class="row" style="margin-bottom:8px; align-items:center;">
                 <label style="font-weight:700; margin-right:8px; line-height:36px;">Variante:</label>
@@ -128,8 +284,10 @@
                 <button id="onJoin">Join</button>
             </div>
             <p id="onStatus" style="margin-top:10px; color:var(--muted); font-size:13px;">Status: Offline</p>
+            <div class="divider"></div>
         </div>
 
+        <div class="divider"></div>
         <p style="margin-top:12px; color:var(--muted)">
             <b>Spieler 1</b>: <span class="kbd">W</span> hoch · <span class="kbd">S</span> runter · <span class="kbd">A</span> links · <span class="kbd">D</span> rechts · <span class="kbd">Space</span> Boost
             <br/>
@@ -182,6 +340,85 @@
             <div id="countdownInner">3</div>
         </div>
         <div id="countdownLabel">Spiel startet in</div>
+    </div>
+</div>
+
+<!-- Floating Settings Panel (rechte Ecke) -->
+<div id="settingsPanel" role="dialog" aria-hidden="true" aria-label="Spiel-Einstellungen">
+    <div class="hdr">
+        <div class="dot" aria-hidden="true"></div>
+        <h3>Spiel‑Einstellungen</h3>
+        <button class="close" id="settingsClose" title="Schließen">✕</button>
+    </div>
+
+    <div class="accent" aria-hidden="true"></div>
+
+    <!-- Preset Quick-Select -->
+    <div class="slider-row" style="margin-bottom:8px;">
+        <label style="font-weight:700; display:block; margin-bottom:6px;">Preset</label>
+        <select id="presetQuickSelect" class="input" style="width:100%;">
+            <option value="default">Standard</option>
+        </select>
+    </div>
+
+    <!-- Sliders (IDs unverändert) -->
+    <div class="slider-row">
+        <div class="slider-label"><span>Auto‑Beschleunigung</span><span class="value" id="val-carAccel">100%</span></div>
+        <input type="range" id="slider-carAccel" min="50" max="150" value="100" step="5">
+    </div>
+
+    <div class="slider-row">
+        <div class="slider-label"><span>Top‑Geschw.</span><span class="value" id="val-carMaxV">100%</span></div>
+        <input type="range" id="slider-carMaxV" min="70" max="130" value="100" step="5">
+    </div>
+
+    <div class="slider-row">
+        <div class="slider-label"><span>Boost‑Kraft</span><span class="value" id="val-boostAccMul">100%</span></div>
+        <input type="range" id="slider-boostAccMul" min="70" max="150" value="100" step="5">
+    </div>
+
+    <div class="slider-row">
+        <div class="slider-label"><span>Ball‑Trägheit</span><span class="value" id="val-ballDrag">100%</span></div>
+        <input type="range" id="slider-ballDrag" min="70" max="130" value="100" step="5">
+    </div>
+
+    <div class="slider-row">
+        <div class="slider-label"><span>Auto‑Bremse</span><span class="value" id="val-carDrag">100%</span></div>
+        <input type="range" id="slider-carDrag" min="50" max="150" value="100" step="5">
+    </div>
+
+    <div class="slider-row">
+        <div class="slider-label"><span>Boost‑Aufladung</span><span class="value" id="val-boostRegen">100%</span></div>
+        <input type="range" id="slider-boostRegen" min="50" max="150" value="100" step="5">
+    </div>
+
+    <div class="slider-row">
+        <div class="slider-label"><span>Ball‑Elastizität</span><span class="value" id="val-wallBounce">100%</span></div>
+        <input type="range" id="slider-wallBounce" min="70" max="140" value="100" step="5">
+    </div>
+
+    <div class="slider-row">
+        <div class="slider-label"><span>Stoß‑Kraft</span><span class="value" id="val-kickImpulse">100%</span></div>
+        <input type="range" id="slider-kickImpulse" min="60" max="150" value="100" step="5">
+    </div>
+
+    <div style="display:flex; gap:8px; margin-top:10px;">
+        <button id="presetsManageBtn" style="flex:1;">Presets verwalten</button>
+        <button id="settingsCloseFooter" style="flex:1;">Schließen</button>
+    </div>
+
+</div>
+
+<!-- Preset-Modal (neu hinzugefügt) -->
+<div id="presetModal" aria-hidden="true">
+    <div class="modal-content" role="dialog" aria-label="Presets verwalten">
+        <button class="modal-close" title="Schließen">✕</button>
+        <h3>Presets verwalten</h3>
+        <div id="presetModalList"></div>
+        <div class="row" style="margin-top:10px;">
+            <button id="saveNewPresetBtn">Preset speichern</button>
+            <button id="presetModalClose">Schließen</button>
+        </div>
     </div>
 </div>
 
@@ -371,6 +608,8 @@
                     if (msg.type === 'countdown') netSetStatus('Starts in ' + msg.remaining);
                     else netSetStatus('Countdown abgebrochen');
                     if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
+                    // Countdown overlay update
+                    showCountdown((typeof msg.remaining === 'number') ? msg.remaining : 0, 3, 'Spiel startet in');
                 } else if (msg.type === 'switch_failed'){
                     netSetStatus('Teamwechsel fehlgeschlagen: ' + (msg.reason || 'busy'));
                 } else if (msg.type === 'switch_ok'){
@@ -397,13 +636,12 @@
 
     function netStartSending(){
         if (NET.sendTimer) clearInterval(NET.sendTimer);
-        // back to ~60 Hz for smooth input
         NET.sendTimer = setInterval(() => {
             if (mode !== 'online' || !NET.connected) return;
             NET.seq++;
             const input = netLocalInput();
             wsSend({ type:'input', input:{...input, seq: NET.seq }});
-        }, 66); // ~60 Hz
+        }, 16); // ~60 Hz
     }
 
     function applyServerState(msg){
@@ -434,7 +672,7 @@
                  for (let k=0;k<add;k++){
                      const idx = cars.length;
                      const side = (idx % 2 === 0) ? 'left' : 'right';
-                     const controls = (idx===0) ? { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' }
+                     const controls = (idx===0) ? { up:'KeyW', down:'KeyS', left:'KeyA', right:'D', boost:'Space' }
                                     : (idx===1) ? { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
                                     : { up:null, down:null, left:null, right:null, boost:null };
                      cars.push(new Car({
@@ -552,8 +790,12 @@
             const ownGoal   = (this.side === 'right') ? goalRight : goalLeft;
             const enemyGoal = (this.side === 'right') ? goalLeft  : goalRight;
 
-            const opponent = cars[0] === this ? cars[1] : cars[0];
-            const self = cars[0] === this ? cars[0] : cars[1];
+            // Find opponent und self by index (robust für variable car count)
+            let self, opponent;
+            for (let i=0;i<cars.length;i++){
+                if (cars[i] === this) { self = this; opponent = cars[(i+1)%cars.length]; break; }
+            }
+            if (!opponent) opponent = cars[cars.length-1]; // fallback
 
             // Prediction
             const pBall = ball.pos.clone().add(ball.vel.clone().mul(CFG.botPrediction));
@@ -596,6 +838,7 @@
             if (distBotBall > this.ai.lastDist + 6) this.ai.stall = (this.ai.stall || 0) + 1;
             else this.ai.stall = 0;
             this.ai.lastDist = distBotBall;
+
             if (now > this.ai.until){
                 let mode;
 
@@ -613,17 +856,24 @@
                 }
 
                 this.ai.mode = mode;
-                // etwas länger committen wenn shadow/mark (stabil), kürzer beim chasen
-                const base = (mode === 'SHADOW' || mode === 'MARK') ? 420 : 260;
-                this.ai.until = now + base;
+                // längere Commits für stabile Modi (CLEAR/DRIBBLE brauchen Zeit)
+                const commitTimes = {
+                    'SHADOW': 420,
+                    'MARK': 420,
+                    'CLEAR': 580,      // länger damit nicht ständig wechsel
+                    'DRIBBLE': 580,    // länger damit nicht ständig wechsel
+                    'CHALLENGE': 280,
+                    'CHASE': 200
+                };
+                this.ai.until = now + (commitTimes[mode] || 280);
             }
 
             let mode = this.ai.mode;
 
-            // Wenn DRIBBLE komisch wird (Bot läuft weg / zittert), dann kurz auf CHASE umschalten
-            if (mode === 'DRIBBLE' && this.ai.stall > 14 && distBotBall > 200){
+            // Wenn DRIBBLE/CLEAR komisch wird (Bot läuft weg / zittert), dann kurz auf CHASE umschalten
+            if ((mode === 'DRIBBLE' || mode === 'CLEAR') && this.ai.stall > 16 && distBotBall > 220){
                 this.ai.mode = 'CHASE';
-                this.ai.until = now + 10060;
+                this.ai.until = now + 360;
                 this.ai.stall = 0;
                 mode = 'CHASE';
             }
@@ -730,20 +980,7 @@
                     // Wenn es plötzlich safe wird: abnehmen
                     if (safeToTake && distBotBall < 170) desired = pBall.clone();
                 } else {
-                    // CHASE: aktiv zum Ball (aber darf auch mal warten, wenn Position gut)
-                    /*if((self.pos.clone().add(ball.pos).add(ball.pos)).norm().sub(ball.pos.clone().add(ownGoal).norm()) <= 0.1 || (self.pos.clone().add(ball.pos).add(ball.pos)).norm().sub(ball.pos.clone().add(ownGoal).norm()) >=0.1)
-                    {
-                        if(ball.pos.y>540/2){
-                            desired = pBall.clone().add();
-
-                        }
-                        else{
-
-                        }
-                    }
-                    else {
-
-                    }*/
+                    // CHASE: aktiv zum Ball
                     desired = pBall.clone();
                 }
             }
@@ -751,8 +988,9 @@
             // Grenzen
             desired.y = clamp(desired.y, CFG.pad + 45, canvas.height - CFG.pad - 45);
 
-            // -------- Target Smoothing --------
-            const alpha = 1 - Math.exp(-10 * dt);
+            // -------- Target Smoothing: reduzieren für CLEAR/DRIBBLE (kein über-smoothing) --------
+            const slowSmooth = (mode === 'CLEAR' || mode === 'DRIBBLE');
+            const alpha = slowSmooth ? (1 - Math.exp(-4 * dt)) : (1 - Math.exp(-10 * dt));  // langsameres smoothing für stabile modes
             this.ai.target.x += (desired.x - this.ai.target.x) * alpha;
             this.ai.target.y += (desired.y - this.ai.target.y) * alpha;
 
@@ -1002,28 +1240,26 @@
     function reset(keepScore=false, playersCount=2){
         cars = [];
         for (let i=0;i<playersCount;i++){
-            // Abwechselnd links/rechts: 0,2 links (blau), 1,3 rechts (rot)
             const side = (i % 2 === 0) ? 'left' : 'right';
             const x = (side === 'left') ? 200 : canvas.width - 200;
-            // Bei 1v1: beide mittig. Bei 2v2: oben/unten Offset
             const y = (playersCount === 2) ? (canvas.height/2) : (canvas.height/2 + ((i < playersCount/2) ? -40 : 40));
-             const controls = (i === 0) ? { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' }
-                             : (i === 1) ? { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
-                             : { up:null, down:null, left:null, right:null, boost:null };
-             cars.push(new Car({
-                 x, y,
-                 color: i%2===0 ? getCss('--blue') : getCss('--red'),
-                 side,
-                 controls,
-                 isBot: (mode==='pve' && i===1) ? true : false
-             }));
-         }
-         ball = new Ball(canvas.width/2, canvas.height/2);
-         if (!keepScore) score = [0,0];
-         s1El.textContent = score[0];
-         s2El.textContent = score[1];
-         kickoff();
-     }
+            const controls = (i === 0) ? { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' }
+                            : (i === 1) ? { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
+                            : { up:null, down:null, left:null, right:null, boost:null };
+            cars.push(new Car({
+                x, y,
+                color: i%2===0 ? getCss('--blue') : getCss('--red'),
+                side,
+                controls,
+                isBot: (mode==='pve' && i===1) ? true : false
+            }));
+        }
+        ball = new Ball(canvas.width/2, canvas.height/2);
+        if (!keepScore) score = [0,0];
+        s1El.textContent = score[0];
+        s2El.textContent = score[1];
+        kickoff();
+    }
 
     function showMenu(){
         running = false;
@@ -1035,11 +1271,15 @@
         const on = document.getElementById('onlineOptions');
         if (lo) lo.style.display = 'none';
         if (on) on.style.display = 'none';
+        // Settings-Button zusammen mit den Panels ausblenden
+        updateSettingsVisibility();
     }
 
 
     function startOnline(){
          // Online: wir starten das Rendering, State kommt vom Server
+         // vor dem Start Settings-Panel schließen
+         document.getElementById('settingsPanel')?.classList.remove('visible');
          ui.style.display = 'none';
          hud.hidden = false;
          // lokale Anzeige mit erwarteter Anzahl (2 oder 4)
@@ -1054,6 +1294,8 @@
     }
 
     function start(){
+        // bei lokalem Start ebenfalls Settings-Panel schließen
+        document.getElementById('settingsPanel')?.classList.remove('visible');
         ui.style.display = 'none';
         hud.hidden = false;
         reset(false);
@@ -1074,9 +1316,9 @@
         if (ball.pos.x + ball.r < leftGoalLine && Math.abs(ball.pos.y - cy) < halfG){
             score[1]++;
             s2El.textContent = score[1];
-            // local: start short countdown before kickoff
+            // local: start short countdown before kickoff (reduced to 1.5s)
             if (mode !== 'online'){
-                localCountdown = 3.0;
+                localCountdown = 1.5;
                 localCountdownActive = true;
             }
             return;
@@ -1088,7 +1330,7 @@
             score[0]++;
             s1El.textContent = score[0];
             if (mode !== 'online'){
-                localCountdown = 3.0;
+                localCountdown = 1.5;
                 localCountdownActive = true;
             }
             return;
@@ -1226,13 +1468,28 @@
              }
          }
 
+         // Countdown Overlay aktualisieren
+         if (localCountdownActive){
+             updateCountdownRing(localCountdown);
+             showCountdown(localCountdown, 3, 'Weiter in');
+         } else if (mode === 'online' && NET.lastState && typeof NET.lastState.countdown === 'number' && NET.lastState.countdown > 0){
+             // server countdown active
+             updateCountdownRing(NET.lastState.countdown);
+             showCountdown(NET.lastState.countdown, 3, 'Spiel startet in');
+         } else {
+             // no countdown active
+             hideCountdown();
+         }
+
          requestAnimationFrame(loop);
     }
 
+
+
     // ---------- UI: Init zweistufige Auswahl ----------
     function initUI(){
-         const show = id => { const e = document.getElementById(id); if (e) e.style.display = ''; };
-         const hide = id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; };
+         const show = id => { const e = document.getElementById(id); if (e) e.style.display = ''; updateSettingsVisibility(); };
+         const hide = id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; updateSettingsVisibility(); };
 
          // Hauptwahl sichtbar, Panels versteckt (sicherstellen)
          hide('localOptions'); hide('onlineOptions');
@@ -1257,8 +1514,9 @@
                  await netConnect();
                  const maxP = parseInt(document.getElementById('onVariant')?.value || '2', 10) || 2;
                  expectedPlayers = maxP;
-                 // sauber senden (ohne diff-marker)
-                 wsSend({ type:'create_room', maxPlayers: maxP, playerName });
+                 // Advanced Settings mitsenden
+                 const settings = getCurrentSettings();
+                 wsSend({ type:'create_room', maxPlayers: maxP, playerName, settings });
              }catch(e){ console.warn(e); }
          });
 
@@ -1270,110 +1528,56 @@
                  const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
                  expectedPlayers = parseInt(document.getElementById('onVariant')?.value || '2',10) || 2;
                  await netConnect();
+                 // Join sendet keine Settings (Host bestimmt), Server liefert cfgPartial zurück
                  wsSend({ type:'join_room', code, playerName });
              }catch(e){ console.warn(e); }
          });
 
-         // ...existing code...
+         // initial einmal prüfen
+         updateSettingsVisibility();
     }
 
-    // ---------- Lobby UI / team switching ----------
-    const lobbyEl = document.getElementById('lobby');
-    const slotsBlue = document.getElementById('slotsBlue');
-    const slotsRed  = document.getElementById('slotsRed');
-    const lobbyCode = document.getElementById('lobbyCode');
-    const lobbyNotice = document.getElementById('lobbyNotice');
-    const joinBlueBtn = document.getElementById('joinBlue');
-    const joinRedBtn  = document.getElementById('joinRed');
-    const lobbyLeaveBtn = document.getElementById('lobbyLeave');
-    const lobbyCopyBtn = document.getElementById('lobbyCopyBtn');
-
-    function enterLobby(){
-        // hide main menu, show lobby (immediate when clicking join/host)
-        ui.style.display = 'none';
-        lobbyEl.style.display = 'block';
-        hud.hidden = false;
-        // ensure we have a visible placeholder player layout
-        renderLobby();
-    }
-    function leaveLobby(){
-        lobbyEl.style.display = 'none';
-        // show menu again
-        showMenu();
-    }
-
-    function renderLobby(){
-        // fill blue/red slots based on NET.roomMaxPlayers and NET.lastState / NET.playerNames
-        const maxP = NET.roomMaxPlayers || expectedPlayers || 2;
-        const names = (NET.lastState && NET.lastState.playerNames) ? NET.lastState.playerNames : (NET.playerNames || []);
-        // update code display
-        lobbyCode.textContent = NET.roomCode || '—';
-
-        // clear
-        slotsBlue.innerHTML = '';
-        slotsRed.innerHTML = '';
-
-        // compute slot indices for sides: for 2 players: [0] left, [1] right; for 4 players: left [0,2], right [1,3]
-        const leftIdx = [];
-        const rightIdx = [];
-        for (let i=0;i<maxP;i++){
-            if (i % 2 === 0) leftIdx.push(i); else rightIdx.push(i);
-        }
-        // render helper
-        const renderSlot = (idx) => {
-            const wrapper = document.createElement('div');
-            wrapper.style.padding = '8px';
-            wrapper.style.borderRadius = '8px';
-            wrapper.style.background = 'rgba(255,255,255,0.02)';
-            wrapper.style.display = 'flex';
-            wrapper.style.justifyContent = 'space-between';
-            wrapper.style.alignItems = 'center';
-            const name = names[idx] || 'Warte...';
-            const span = document.createElement('div');
-            span.textContent = (idx === NET.playerIndex) ? (name + ' (du)') : name;
-            span.style.fontWeight = (idx === NET.playerIndex) ? '700' : '500';
-            wrapper.appendChild(span);
-            const slotInfo = document.createElement('div');
-            slotInfo.style.fontSize = '12px';
-            slotInfo.style.color = 'var(--muted)';
-            slotInfo.textContent = 'Slot ' + (idx+1);
-            wrapper.appendChild(slotInfo);
-            return wrapper;
+    // Hilfsfunktion: aktuelle Slider-Werte sammeln und als CFG-Overrides senden
+    function getCurrentSettings(){
+        // Prozentwerte 50..150 → Faktoren 0.5..1.5 oder direkte Werte je Key
+        const readPct = (id) => {
+            const el = document.getElementById('slider-' + id);
+            const v = el ? Number(el.value) : 100;
+            return clamp(v, 50, 150) / 100; // Faktor
         };
-
-        leftIdx.forEach(i => slotsBlue.appendChild(renderSlot(i)));
-        rightIdx.forEach(i => slotsRed.appendChild(renderSlot(i)));
-
-        // notice
-        const filled = (names.filter(n => n && n.length>0).length);
-        lobbyNotice.textContent = `Spieler: ${filled} / ${maxP}`;
+        // Host sendet nur nicht-feldbezogene Keys
+        return {
+            carAcc: CFG.carAcc * readPct('carAccel'),
+            carMaxSpeed: CFG.carMaxSpeed * readPct('carMaxV'),
+            carDrag: CFG.carDrag * readPct('carDrag'),
+            boostAccMul: CFG.boostAccMul * readPct('boostAccMul'),
+            boostMaxMul: CFG.boostMaxMul * 1, // Top-Speed Multiplikator eher stabil lassen → hier 100% (optional: readPct('boostAccMul') wenn gewünscht)
+            boostDrain: CFG.boostDrain * 1,   // Drain nicht zu stark ändern → hier 100% (oder eigener Slider)
+            boostRegen: CFG.boostRegen * readPct('boostRegen'),
+            ballDrag: CFG.ballDrag * readPct('ballDrag'),
+            wallRestitution: CFG.wallRestitution * readPct('wallBounce'),
+            kickImpulse: CFG.kickImpulse * readPct('kickImpulse'),
+        };
     }
 
-    // click handlers send switch_team requests
-    joinBlueBtn?.addEventListener('click', () => {
-        if (!NET.ws || NET.ws.readyState !== 1){ netSetStatus('Nicht verbunden'); return; }
-        wsSend({ type:'switch_team', side:'left' });
-    });
-    joinRedBtn?.addEventListener('click', () => {
-        if (!NET.ws || NET.ws.readyState !== 1){ netSetStatus('Nicht verbunden'); return; }
-        wsSend({ type:'switch_team', side:'right' });
-    });
-    lobbyLeaveBtn?.addEventListener('click', () => {
-        // leave room locally: close connection and return to menu
-        if (NET.ws) netDisconnect();
-        leaveLobby();
-    });
-    lobbyCopyBtn?.addEventListener('click', () => {
-        const code = NET.roomCode || '';
-        if (!code) return;
-        navigator.clipboard.writeText(code).then(() => {
-            const origText = lobbyCopyBtn.textContent;
-            lobbyCopyBtn.textContent = 'Kopiert!';
-            setTimeout(() => { lobbyCopyBtn.textContent = origText; }, 2000);
-        }).catch(err => console.warn('Copy failed:', err));
-    });
+    // Hilfsfunktion: Server-CFG (ohne Feld-Werte) lokal übernehmen für Anzeige/Kosmetik
+    function applyOnlineCfg(partial){
+        if (!partial || typeof partial !== 'object') return;
+        // Nur nicht-feldbezogene Werte übernehmen
+        if (partial.carAcc != null) CFG.carAcc = partial.carAcc;
+        if (partial.carMaxSpeed != null) CFG.carMaxSpeed = partial.carMaxSpeed;
+        if (partial.carDrag != null) CFG.carDrag = partial.carDrag;
 
-    // ---------- Adjust netConnect message handling ----------
+        if (partial.boostAccMul != null) CFG.boostAccMul = partial.boostAccMul;
+        if (partial.boostMaxMul != null) CFG.boostMaxMul = partial.boostMaxMul;
+        if (partial.boostDrain != null) CFG.boostDrain = partial.boostDrain;
+        if (partial.boostRegen != null) CFG.boostRegen = partial.boostRegen;
+
+        if (partial.ballDrag != null) CFG.ballDrag = partial.ballDrag;
+        if (partial.wallRestitution != null) CFG.wallRestitution = partial.wallRestitution;
+        if (partial.kickImpulse != null) CFG.kickImpulse = partial.kickImpulse;
+    }
+
     function netConnect(){
         return new Promise((resolve, reject) => {
             if (!WS_URL || WS_URL.includes('YOUR-RENDER-SERVICE')){
@@ -1416,6 +1620,8 @@
                     // enter lobby (don't start game yet)
                     enterLobby();
                     netSetStatus('Host • Code ' + NET.roomCode);
+                    // Übernommene CFG vom Server anwenden (falls gesendet)
+                    if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
                 } else if (msg.type === 'join_ok'){
                     NET.roomMaxPlayers = msg.maxPlayers || 2;
                     expectedPlayers = NET.roomMaxPlayers;
@@ -1427,6 +1633,7 @@
                     // enter lobby (don't start game yet)
                     enterLobby();
                     netSetStatus('Joined • Code ' + NET.roomCode);
+                    if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
                 } else if (msg.type === 'join_failed'){
                     netSetStatus('Join failed: ' + (msg.reason || 'unknown'));
                     // show menu again and hide lobby if we had opened it
@@ -1445,6 +1652,8 @@
                         // hide lobby
                         if (lobbyEl) lobbyEl.style.display = 'none';
                     }
+                    // Snapshot kann ebenfalls cfgPartial tragen (optional)
+                    if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
                 } else if (msg.type === 'start'){
                     // server explicit start message (countdown ended)
                     startOnline();
@@ -1458,6 +1667,8 @@
                     if (msg.type === 'countdown') netSetStatus('Starts in ' + msg.remaining);
                     else netSetStatus('Countdown abgebrochen');
                     if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
+                    // Countdown overlay update
+                    showCountdown((typeof msg.remaining === 'number') ? msg.remaining : 0, 3, 'Spiel startet in');
                 } else if (msg.type === 'switch_failed'){
                     netSetStatus('Teamwechsel fehlgeschlagen: ' + (msg.reason || 'busy'));
                 } else if (msg.type === 'switch_ok'){
@@ -1471,132 +1682,140 @@
         });
     }
 
-    // ---------- Modify Host/Join buttons to open lobby immediately on click ----------
-    // Online Host / Join (in initUI)
-    // ...existing initUI code...
-    // inside initUI the host/join handlers get already set to send create_room / join_room
-    // adjust behaviour: when pressing Join/Host hide menu and show lobby instantly
+    // ---------- UI: Init zweistufige Auswahl ----------
+    function initUI(){
+         const show = id => { const e = document.getElementById(id); if (e) e.style.display = ''; updateSettingsVisibility(); };
+         const hide = id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; updateSettingsVisibility(); };
 
-    // Hijack prior handlers by adding event listeners after initUI runs
-    function attachImmediateLobbyHooks(){
-        const onHostBtn = document.getElementById('onHost');
-        if (onHostBtn){
-            onHostBtn.addEventListener('click', () => {
-                // show lobby right away (server will confirm)
-                enterLobby();
-            }, { once:false });
+         // Hauptwahl sichtbar, Panels versteckt (sicherstellen)
+         hide('localOptions'); hide('onlineOptions');
+
+         // Choice buttons
+         const bLocal = document.getElementById('btnLocalChoice');
+         const bOnline = document.getElementById('btnOnlineChoice');
+         if (bLocal) bLocal.addEventListener('click', () => { show('localOptions'); hide('onlineOptions'); });
+         if (bOnline) bOnline.addEventListener('click', () => { show('onlineOptions'); hide('localOptions'); });
+
+         // Local action buttons
+         const pvp = document.getElementById('pvp');
+         const pve = document.getElementById('pve');
+         if (pvp) pvp.addEventListener('click', () => { mode = 'pvp'; start(); });
+         if (pve) pve.addEventListener('click', () => { mode = 'pve'; start(); });
+
+         // Online Host / Join
+         const onHost = document.getElementById('onHost');
+         if (onHost) onHost.addEventListener('click', async () => {
+             try{
+                 const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
+                 await netConnect();
+                 const maxP = parseInt(document.getElementById('onVariant')?.value || '2', 10) || 2;
+                 expectedPlayers = maxP;
+                 // Advanced Settings mitsenden
+                 const settings = getCurrentSettings();
+                 wsSend({ type:'create_room', maxPlayers: maxP, playerName, settings });
+             }catch(e){ console.warn(e); }
+         });
+
+         const onJoin = document.getElementById('onJoin');
+         if (onJoin) onJoin.addEventListener('click', async () => {
+             const code = (document.getElementById('onCode')?.value || '').trim().toUpperCase();
+             if (!code){ netSetStatus('Code fehlt'); return; }
+             try{
+                 const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
+                 expectedPlayers = parseInt(document.getElementById('onVariant')?.value || '2',10) || 2;
+                 await netConnect();
+                 // Join sendet keine Settings (Host bestimmt), Server liefert cfgPartial zurück
+                 wsSend({ type:'join_room', code, playerName });
+             }catch(e){ console.warn(e); }
+         });
+
+         // initial einmal prüfen
+         updateSettingsVisibility();
+    }
+
+
+    // Settings-Interaktionen initialisieren (Panel öffnen/schließen + Modal)
+    function initSliders(){
+        const btnSettings = document.getElementById('btnSettings');
+        const panel = document.getElementById('settingsPanel');
+        const closeHeader = document.getElementById('settingsClose');
+        const closeFooter = document.getElementById('settingsCloseFooter');
+
+        const manageBtn = document.getElementById('presetsManageBtn');
+        const presetModal = document.getElementById('presetModal');
+        const presetModalClose = document.getElementById('presetModalClose');
+        const presetModalX = presetModal ? presetModal.querySelector('.modal-close') : null;
+
+        // Panel öffnen/schließen
+        if (btnSettings && panel){
+            btnSettings.addEventListener('click', () => {
+                panel.classList.toggle('visible');
+            });
         }
-        const onJoinBtn = document.getElementById('onJoin');
-        if (onJoinBtn){
-            onJoinBtn.addEventListener('click', () => {
-                enterLobby();
-            }, { once:false });
+        if (closeHeader && panel){
+            closeHeader.addEventListener('click', () => panel.classList.remove('visible'));
         }
-    }
+        if (closeFooter && panel){
+            closeFooter.addEventListener('click', () => panel.classList.remove('visible'));
+        }
 
-    // call after UI init
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { initUI(); attachImmediateLobbyHooks(); });
-    else { initUI(); attachImmediateLobbyHooks(); }
+        // Presets-Modal öffnen/schließen (falls vorhanden)
+        if (manageBtn && presetModal){
+            manageBtn.addEventListener('click', () => {
+                presetModal.classList.add('visible');
+            });
+        }
+        if (presetModalClose && presetModal){
+            presetModalClose.addEventListener('click', () => presetModal.classList.remove('visible'));
+        }
+        if (presetModalX && presetModal){
+            presetModalX.addEventListener('click', () => presetModal.classList.remove('visible'));
+        }
+        if (presetModal){
+            // Klick außerhalb schließt Modal
+            presetModal.addEventListener('click', (e) => {
+                if (e.target === presetModal) presetModal.classList.remove('visible');
+            });
+        }
 
-    // If the page used showMenu() on load, keep that behaviour:
-    // ...existing code may call showMenu() already...
-    // DOM handles for countdown overlay
-    const countdownOverlay = document.getElementById('countdownOverlay');
-    const countdownRing = document.getElementById('countdownRing');
-    const countdownInner = document.getElementById('countdownInner');
-    const countdownLabel = document.getElementById('countdownLabel');
-    let _countdownTotal = 3; // default total seconds used for ring fraction
-
-    function showCountdown(remaining, total=3, label='Spiel startet in'){
-        _countdownTotal = Math.max(1, total);
-        countdownInner.textContent = String(Math.max(0, Math.ceil(remaining)));
-        countdownLabel.textContent = label;
-        updateCountdownRing(remaining);
-        countdownOverlay.classList.add('visible');
-        countdownOverlay.style.display = 'flex';
-        countdownOverlay.setAttribute('aria-hidden','false');
-    }
-    function hideCountdown(){
-        countdownOverlay.classList.remove('visible');
-        countdownOverlay.style.display = 'none';
-        countdownOverlay.setAttribute('aria-hidden','true');
-    }
-    function updateCountdownRing(remaining){
-        const frac = clamp(Math.max(0, remaining) / Math.max(1, _countdownTotal), 0, 1);
-        const deg = Math.round(frac * 360);
-        // prefer team color if available: use CSS var --blue for positive
-        const accent = getCss('--blue') || '#60a5fa';
-        countdownRing.style.background = `conic-gradient(${accent} ${deg}deg, rgba(255,255,255,0.06) ${deg}deg)`;
-        countdownInner.textContent = String(Math.max(0, Math.ceil(remaining)));
-    }
-
-    // validate presence of CSS variables to help IDE warnings (logs missing to console)
-    (function validateCssVars(){
-        const expected = ['--bg','--panel','--field1','--field2','--line','--text','--muted','--blue','--red','--ball','--good'];
-        const cs = getComputedStyle(document.documentElement);
-        const missing = expected.filter(v => (cs.getPropertyValue(v) || '').trim() === '');
-        if (missing.length) console.warn('Fehlende CSS-Variablen:', missing);
-    })();
-
-    // ---------- Patch: Countdown Overlay Integration ----------
-    // We'll inject small handlers by wrapping ws.onmessage assignment earlier in netConnect()
-    // (Below: in the ws.onmessage path the code already handles 'countdown' in some places; ensure we also show/hide overlay)
-
-    // To keep patch minimal: add a small listener that watches NET.lastState and server messages
-    // For server-side countdown messages (ws.onmessage already checks msg.type === 'countdown' or 'countdown_cancelled')
-    // ensure show/hide is called there; we'll add the logic right after netSetStatus calls in netConnect's onmessage branches.
-
-    // (Find the ws.onmessage body above; after the 'countdown' branch add:)
-    // Note: below we rely on the existing ws.onmessage branches already present; add handlers to show/hide overlay globally:
-    const _origNetConnect = netConnect;
-    netConnect = function(...args){
-        return _origNetConnect().then(() => {
-            // attach a small wrapper that intercepts countdown messages from NET.ws (if present)
-            const ws = NET.ws;
-            if (!ws) return;
-            const prevOnMsg = ws.onmessage;
-            ws.onmessage = (ev) => {
-                let msg;
-                try{ msg = JSON.parse(ev.data); }catch{ if (prevOnMsg) prevOnMsg(ev); return; }
-                if (msg.type === 'countdown'){
-                    // show overlay with server countdown (assume total 3s)
-                    showCountdown((typeof msg.remaining === 'number') ? msg.remaining : 0, 3, 'Spiel startet in');
-                } else if (msg.type === 'countdown_cancelled'){
-                    hideCountdown();
-                } else if (msg.type === 'start'){
-                    hideCountdown();
-                } else if (msg.type === 'goal'){
-                    // server started goal countdown separately via countdown messages; keep as-is
-                }
-                // forward to original handler so client logic still runs
-                if (prevOnMsg) prevOnMsg(ev);
-            };
+        // Panel beim Start automatisch schließen, ohne bestehende Funktionen zu ändern
+        document.addEventListener('game:start', () => {
+            panel?.classList.remove('visible');
         });
-    };
+        document.addEventListener('game:startOnline', () => {
+            panel?.classList.remove('visible');
+        });
+    }
 
-    // Update local countdown usage: replace canvas overlay usage with DOM overlay calls
-    // find in loop() where localCountdownActive is handled and add show/hide calls around it
-    // (we'll update the existing loop code region:)
-    // ...existing loop function further down...
-    // Insert small helper to sync overlay in animation loop:
-    const _origLoop = loop;
-    loop = function(t){
-        // call original loop logic (it updates localCountdown variable)
-        _origLoop(t);
-        // after loop run, if local countdown active reflect in DOM
-        if (localCountdownActive){
-            updateCountdownRing(localCountdown);
-            showCountdown(localCountdown, 3, 'Weiter in');
-        } else if (mode === 'online' && NET.lastState && typeof NET.lastState.countdown === 'number' && NET.lastState.countdown > 0){
-            // server countdown active
-            updateCountdownRing(NET.lastState.countdown);
-            showCountdown(NET.lastState.countdown, 3, 'Spiel startet in');
-        } else {
-            // no countdown active
-            hideCountdown();
+    // Settings-Button nur anzeigen, wenn Local- oder Online-Optionen sichtbar sind
+    function updateSettingsVisibility(){
+        const btn = document.getElementById('btnSettings');
+        const lo = document.getElementById('localOptions');
+        const on = document.getElementById('onlineOptions');
+        if (!btn || !lo || !on) return;
+        const loComputed = getComputedStyle(lo).display !== 'none';
+        const onComputed = getComputedStyle(on).display !== 'none';
+        const visible = loComputed || onComputed;
+        btn.style.display = visible ? '' : 'none';
+    }
+
+    // Hook: nach Start-Buttons ein Custom-Event feuern, damit initSliders Panel schließen kann
+    (function hookStartClosePanel(){
+        const origStart = window.start;
+        const origStartOnline = window.startOnline;
+        if (typeof origStart === 'function'){
+            window.start = function(){
+                document.dispatchEvent(new Event('game:start'));
+                return origStart.apply(this, arguments);
+            };
         }
-    };
-
+        if (typeof origStartOnline === 'function'){
+            window.startOnline = function(){
+                document.dispatchEvent(new Event('game:startOnline'));
+                return origStartOnline.apply(this, arguments);
+            };
+        }
+    })();
 </script>
 </body>
 </html>
