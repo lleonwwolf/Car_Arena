@@ -236,7 +236,7 @@ function stepRoom(room, dt){
 
   const RC = room.cfg;
 
-  // cars from inputs
+  // cars from inputs (EXAKT wie Client)
   for (let i=0;i<room.maxPlayers;i++){
     const car = room.car[i];
     const inp = room.input[i] || { up:false, down:false, left:false, right:false, boost:false };
@@ -262,20 +262,23 @@ function stepRoom(room, dt){
       room.energy[i] = Math.min(100, room.energy[i] + RC.boostRegen * dt);
     }
 
-    if (a.len() > 0) a.norm().mul(accel * dt); // accel * dt für px/s²
+    // WICHTIG: wie Client → norm() dann mul(accel * dt)
+    if (a.len() > 0) a.norm().mul(accel * dt);
 
     car.v.add(a);
 
+    // speed cap
     const sp = car.v.len();
     if (sp > maxV) car.v.mul(maxV / sp);
 
-    // Drag: exponential statt multiplikativ (Client nutzt exp)
+    // drag: EXAKT wie Client
     car.v.mul(Math.exp(-RC.carDrag * dt));
 
-    car.p.add(car.v.clone().mul(dt)); // ohne tickHz multiplier
+    // position update: EXAKT wie Client (ohne tickHz)
+    car.p.add(car.v.clone().mul(dt));
   }
 
-  // bounds enforcement (nutzt Feld-Werte aus global CFG)
+  // bounds enforcement (unverändert)
   for (let i=0;i<room.maxPlayers;i++){
     const car = room.car[i];
     const p = CFG.pad;
@@ -288,12 +291,15 @@ function stepRoom(room, dt){
     car.p.y = clamp(car.p.y, p, CFG.h - p);
   }
 
-  // ball
+  // ball (EXAKT wie Client)
   const ball = room.ball;
-  ball.v.mul(RC.ballDrag); // kein exp hier (Client nutzt auch einfach mul)
+  // Client nutzt: ball.vel.mul(Math.exp(-CFG.ballDrag * dt))
+  // ABER: ballDrag ist 0.95 → das ist KEINE Drag-Konstante, sondern ein direkter Multiplikator!
+  // Client macht: ball.vel.mul(CFG.ballDrag) → server muss gleich tun
+  ball.v.mul(RC.ballDrag);
   ball.p.add(ball.v.clone().mul(dt));
 
-  // wall bounce (ball) – Feld-Werte bleiben global
+  // wall bounce (unverändert)
   const minX = CFG.pad + CFG.ballR;
   const maxX = CFG.w - CFG.pad - CFG.ballR;
   const minY = CFG.pad + CFG.ballR;
@@ -327,13 +333,10 @@ function stepRoom(room, dt){
 
   const scorer = goalCheck(room);
   if (scorer !== null){
-    // send goal event and start server-side countdown before next kickoff
     broadcastRoom(room, { type:"goal", scorer, score: room.score, t: nowMs() });
-    // pause the match and start 3s countdown; resetKickoff will happen when countdown reaches 0
     room.started = false;
     room.countdownRemaining = 3;
     room.countdownLastTick = nowMs();
-    // inform clients immediately about countdown state
     broadcastRoom(room, { type:'countdown', remaining: room.countdownRemaining });
   }
 }
