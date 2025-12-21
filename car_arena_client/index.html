@@ -509,6 +509,7 @@
         pingTimer: null,
         lastPingSentAt: 0,
         pingMs: null,
+        countdownStartAt: null, // timestamp wann countdown_start kam
     };
 
     // client-seitige Erwartung (für Anzeige bevor Server bestätigt)
@@ -622,7 +623,6 @@
                     NET.lastStateAt = performance.now();
                     if (msg.playerNames) NET.playerNames = msg.playerNames;
 
-                    // LOBBY: sicher referenzieren
                     const lobbyEl = document.getElementById('lobby');
                     if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
 
@@ -630,7 +630,7 @@
                         startOnline();
                         if (lobbyEl) lobbyEl.style.display = 'none';
                     }
-                    if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
+                    // cfgPartial NICHT mehr in jedem state – nur beim Start
                 } else if (msg.type === 'start'){
                     startOnline();
                     const lobbyEl = document.getElementById('lobby');
@@ -639,12 +639,13 @@
                     if (msg.playerNames) { NET.playerNames = msg.playerNames; }
                     const lobbyEl = document.getElementById('lobby');
                     if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
-                } else if (msg.type === 'countdown' || msg.type === 'countdown_cancelled'){
-                    if (msg.type === 'countdown') netSetStatus('Starts in ' + msg.remaining);
-                    else netSetStatus('Countdown abgebrochen');
+                } else if (msg.type === 'countdown_start'){
+                    // Server sagt: Countdown startet jetzt (3 Sekunden)
+                    NET.countdownStartAt = performance.now();
                     const lobbyEl = document.getElementById('lobby');
                     if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
-                    showCountdown((typeof msg.remaining === 'number') ? msg.remaining : 0, 3, 'Spiel startet in');
+                    // Zeige Countdown-Overlay, aber client zählt selbst runter
+                    showCountdown(3, 3, 'Spiel startet in');
                 } else if (msg.type === 'switch_failed'){
                     netSetStatus('Teamwechsel fehlgeschlagen: ' + (msg.reason || 'busy'));
                 } else if (msg.type === 'switch_ok'){
@@ -1457,16 +1458,15 @@
 
     function loop(t){
          if (!running) return;
-         const dt = clamp((t - lastT) / 1000, 0, 1/30); // stable
+         const dt = clamp((t - lastT) / 1000, 0, 1/30);
          lastT = t;
 
-         // If local countdown active, decrement timer here (so overlay updates) but keep rendering
+         // If local countdown active, decrement timer here
          if (localCountdownActive){
              localCountdown -= dt;
              if (localCountdown <= 0){
                  localCountdownActive = false;
                  localCountdown = 0;
-                 // perform kickoff after countdown
                  kickoff();
              }
          }
@@ -1486,7 +1486,6 @@
                  ctx.fillStyle = car.color;
                  ctx.font = 'bold 13px system-ui';
                  ctx.textAlign = 'center';
-                 // Name höher platzieren, damit er über der Boost/Energieleiste sitzt
                  ctx.fillText(name, car.pos.x, car.pos.y - car.r - 28);
                  ctx.globalAlpha = 1;
                  ctx.restore();
@@ -1506,14 +1505,23 @@
 
          // Countdown Overlay aktualisieren
          if (localCountdownActive){
+             // Lokales Spiel: lokale Countdown
              updateCountdownRing(localCountdown);
-             showCountdown(localCountdown, 3, 'Weiter in');
-         } else if (mode === 'online' && NET.lastState && typeof NET.lastState.countdown === 'number' && NET.lastState.countdown > 0){
-             // server countdown active
-             updateCountdownRing(NET.lastState.countdown);
-             showCountdown(NET.lastState.countdown, 3, 'Spiel startet in');
+             showCountdown(localCountdown, 1.5, 'Weiter in');
+         } else if (mode === 'online' && NET.countdownStartAt !== null){
+             // Online Spiel: Client zählt runter basierend auf elapsed time
+             const elapsed = (performance.now() - NET.countdownStartAt) / 1000;
+             const remaining = Math.max(0, 3 - elapsed);
+             if (remaining > 0){
+                 updateCountdownRing(remaining);
+                 showCountdown(remaining, 3, 'Spiel startet in');
+             } else {
+                 // Countdown vorbei
+                 hideCountdown();
+                 NET.countdownStartAt = null;
+             }
          } else {
-             // no countdown active
+             // Kein Countdown aktiv
              hideCountdown();
          }
 
@@ -1853,6 +1861,70 @@
         } else {
             run();
         }
+    })();
+
+    // Ping-Messung (Client)
+    // Ergänze Funktionen und Hooks, damit der Ping rechts oben angezeigt wird.
+    function updatePingHud(ms){
+        const el = document.getElementById('pingHud');
+        if (!el) return;
+        // Nur im Online-Modus sichtbar
+        if (mode === 'online' && NET.connected){
+            el.hidden = false;
+        } else {
+            el.hidden = true;
+            return;
+        }
+        const val = (typeof ms === 'number' && isFinite(ms)) ? Math.round(ms) : '—';
+        el.textContent = `Ping: ${val} ms`;
+        // Farbe je nach Qualität
+        let col = getCss('--text');
+        if (typeof ms === 'number'){
+            if (ms <= 50) col = getCss('--good');       // sehr gut: grün
+            else if (ms > 180) col = getCss('--red');   // schlecht: rot
+            else col = getCss('--text');                // okay: weiß
+        }
+        el.style.color = col || '#e5e7eb';
+    }
+
+    function startPingLoop(){
+        try{ if (NET.pingTimer) clearInterval(NET.pingTimer); }catch{}
+        NET.pingTimer = setInterval(() => {
+            if (mode !== 'online' || !NET.connected) return;
+            NET.lastPingSentAt = performance.now();
+            wsSend({ type:'ping', t: NET.lastPingSentAt });
+        }, 1000); // alle 1s
+        updatePingHud(NET.pingMs);
+    }
+
+    // Patch: starte Ping-Loop direkt in netConnect.onopen und verstecke HUD bei Disconnect/Menu
+    (function patchPingHooks(){
+        const origNetConnect = netConnect;
+        window.netConnect = function(){
+            return new Promise((resolve, reject) => {
+                const p = origNetConnect();
+                p.then(() => {
+                    // Nach erfolgreichem Verbindungsaufbau den Ping-Loop starten
+                    try{ startPingLoop(); }catch{}
+                    resolve();
+                }).catch(reject);
+            });
+        };
+
+        const origDisconnect = netDisconnect;
+        window.netDisconnect = function(){
+            try{ if (NET.pingTimer) clearInterval(NET.pingTimer); }catch{}
+            NET.pingTimer = null;
+            NET.pingMs = null;
+            updatePingHud(NET.pingMs);
+            return origDisconnect.apply(this, arguments);
+        };
+
+        const origShowMenu = showMenu;
+        window.showMenu = function(){
+            updatePingHud(null); // HUD ausblenden
+            return origShowMenu.apply(this, arguments);
+        };
     })();
 </script>
 </body>
