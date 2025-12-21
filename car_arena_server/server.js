@@ -381,6 +381,13 @@ wss.on("connection", (ws) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
 
+    if (msg.type === "ping"){
+      // Antworte sofort – Client misst Roundtrip
+      const t = (typeof msg.t === 'number') ? msg.t : Date.now();
+      send(ws, { type: "pong", t });
+      return;
+    }
+
     if (msg.type === "create_room"){
       const maxP = clamp(msg.maxPlayers || 2, 2, 4);
       const room = createRoom(maxP, msg.settings || null);
