@@ -51,20 +51,24 @@ const CFG = {
   pad: 44,
 
   // Bewegung (Client-Einheiten: px/s)
-  carAccel: 1750,       // px/s² (war 0.62)
-  carMaxV: 395,         // px/s (war 8.0)
-  carDrag: 6.4,         // linear drag (war 0.90)
+  carAccel: 1750,
+  carMaxV: 395,
+  carDrag: 6.4,
+
+  // NEU: Massen wie im Client
+  carMass: 2.2,
+  ballMass: 1.0,
 
   // Boost
-  boostAccelMul: 2.1,   // (war 1.75)
-  boostMaxMul: 1.75,    // (war 1.35)
-  boostDrain: 50,       // energy per second (war 65)
-  boostRegen: 32,       // energy per second (war 38)
+  boostAccelMul: 2.1,
+  boostMaxMul: 1.75,
+  boostDrain: 50,
+  boostRegen: 32,
 
-  ballDrag: 0.95,       // (war 0.985)
-  wallBounce: 0.86,     // (war 0.92)
+  ballDrag: 0.95,
+  wallBounce: 0.86,
 
-  kick: 340,            // impulse scale (gleich wie Client, nicht 0.35!)
+  kick: 340,
   tickHz: 60,
   snapHz: 60,
 
@@ -162,51 +166,46 @@ function resetKickoff(room, scorerIdx=null){
   room.ball.v = new Vec(0,0);
 }
 
-// collision: circle-circle simple
-function resolveCircle(aPos, aVel, aR, bPos, bVel, bR, kickScale){
-  const d = bPos.clone().sub(aPos);
-  let dist = d.len();
-  const minD = aR + bR;
-  if (dist <= 0 || dist >= minD) return false;
+// collision: circle-circle (mass-based, wie Client)
+function resolveCircle(aPos, aVel, aR, aMass, bPos, bVel, bR, bMass, restitution, kickScale){
+  const nVec = bPos.clone().sub(aPos);
+  const dist = nVec.len();
+  const minDist = aR + bR;
+  if (dist <= 0 || dist >= minDist) return false;
 
-  const n = d.mul(1/(dist||1)); // normal from A->B
-  const penetration = minD - dist;
+  const n = nVec.mul(1 / (dist || 1)); // normalisiert
+  const penetration = minDist - dist;
 
-  // push apart (half/half)
-  aPos.add(n.clone().mul(-penetration*0.5));
-  bPos.add(n.clone().mul( penetration*0.5));
+  // positional correction (split by mass)
+  const totalMass = aMass + bMass;
+  const aMove = penetration * (bMass / totalMass);
+  const bMove = penetration * (aMass / totalMass);
+  aPos.add(n.clone().mul(-aMove));
+  bPos.add(n.clone().mul( bMove));
 
   // relative velocity along normal
-  const rel = bVel.clone().sub(aVel);
-  const vn = rel.dot(n);
+  const rv = bVel.clone().sub(aVel);
+  const velAlongNormal = rv.dot(n);
+  if (velAlongNormal > 0) return true; // separating
 
-  // if moving together, apply impulse
-  if (vn < 0){
-    // basis restitution
-    const e = 0.86; // wie CFG.restitution beim Client
-    const impulse = (-vn) * (1 + e);
-    const j = n.clone().mul(impulse);
+  const e = restitution; // 0.86 wie Client
+  const jMag = -(1 + e) * velAlongNormal / (1 / aMass + 1 / bMass);
+  const impulse = n.clone().mul(jMag);
 
-    // car bekommt weniger zurück, ball mehr (asymmetrisch)
-    aVel.add(j.clone().mul(-0.45));
-    bVel.add(j.clone().mul( 0.95));
+  aVel.add(impulse.clone().mul(-1 / aMass));
+  bVel.add(impulse.clone().mul( 1 / bMass));
 
-    // Extra kick nur bei harten Treffern (wie beim Client)
-    const hardHit = Math.abs(vn);
-    if (hardHit > 115){
-      // kickScale ist jetzt groß (340), wird aber relativ zur Car-Geschwindigkeit skaliert
-      const carSpeed = aVel.len();
-      const kickFactor = carSpeed / 395; // normiert an carMaxSpeed
-      const extraKick = kickScale * kickFactor;
-      bVel.add(n.clone().mul(extraKick));
-    }
-
-    // Ball-Geschwindigkeit cappen (max ~650 px/s)
-    const bSpeed = bVel.len();
-    if (bSpeed > 650){
-      bVel.mul(650 / bSpeed);
-    }
+  // Extra Kick (nur bei Car-Ball), wie beim Client: abhängig von Car-Speed
+  const hardHit = Math.abs(velAlongNormal);
+  if (kickScale && hardHit > 115){
+    // bestimme "car" und skaliere kickImpulse mit carSpeed/carMaxV
+    // Annahme: a ist Car, b ist Ball ODER umgekehrt
+    const isABall = (Math.abs(aR - CFG.ballR) < 0.01);
+    const carVel = isABall ? bVel : aVel;
+    const extraKick = kickScale * (carVel.len() / CFG.carMaxV);
+    bVel.add(n.clone().mul(extraKick)); // Kick auf den Ball entlang der Normalrichtung
   }
+
   return true;
 }
 
@@ -291,13 +290,12 @@ function stepRoom(room, dt){
     car.p.y = clamp(car.p.y, p, CFG.h - p);
   }
 
-  // ball (EXAKT wie Client)
+  // ball integration (exp drag + dt)
   const ball = room.ball;
-  // zuvor: ball.v.mul(RC.ballDrag); -> viel zu stark pro Tick
   ball.v.mul(Math.exp(-RC.ballDrag * dt));
   ball.p.add(ball.v.clone().mul(dt));
 
-  // wall bounce (unverändert)
+  // walls with goal openings (wie Client, restitution = RC.wallBounce)
   const minX = CFG.pad + CFG.ballR;
   const maxX = CFG.w - CFG.pad - CFG.ballR;
   const minY = CFG.pad + CFG.ballR;
@@ -308,23 +306,23 @@ function stepRoom(room, dt){
   if (ball.p.y < minY){ ball.p.y = minY; ball.v.y *= -RC.wallBounce; }
   if (ball.p.y > maxY){ ball.p.y = maxY; ball.v.y *= -RC.wallBounce; }
 
-  // car-ball collisions
+  // car-ball collisions (mass-based)
   for (let i=0;i<room.maxPlayers;i++){
     const car = room.car[i];
     resolveCircle(
-      car.p, car.v, CFG.carR,
-      ball.p, ball.v, CFG.ballR,
-      RC.kick
+      car.p, car.v, CFG.carR, CFG.carMass,
+      ball.p, ball.v, CFG.ballR, CFG.ballMass,
+      RC.wallBounce, RC.kick
     );
   }
 
-  // car-car collisions
+  // car-car collisions (mass-based, keine extra kicks)
   for (let i=0;i<room.maxPlayers;i++){
     for (let j=i+1;j<room.maxPlayers;j++){
       resolveCircle(
-        room.car[i].p, room.car[i].v, CFG.carR,
-        room.car[j].p, room.car[j].v, CFG.carR,
-        0.15
+        room.car[i].p, room.car[i].v, CFG.carR, CFG.carMass,
+        room.car[j].p, room.car[j].v, CFG.carR, CFG.carMass,
+        RC.wallBounce, 0
       );
     }
   }
