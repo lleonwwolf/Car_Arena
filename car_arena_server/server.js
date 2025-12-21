@@ -293,10 +293,8 @@ function stepRoom(room, dt){
 
   // ball (EXAKT wie Client)
   const ball = room.ball;
-  // Client nutzt: ball.vel.mul(Math.exp(-CFG.ballDrag * dt))
-  // ABER: ballDrag ist 0.95 → das ist KEINE Drag-Konstante, sondern ein direkter Multiplikator!
-  // Client macht: ball.vel.mul(CFG.ballDrag) → server muss gleich tun
-  ball.v.mul(RC.ballDrag);
+  // zuvor: ball.v.mul(RC.ballDrag); -> viel zu stark pro Tick
+  ball.v.mul(Math.exp(-RC.ballDrag * dt));
   ball.p.add(ball.v.clone().mul(dt));
 
   // wall bounce (unverändert)
