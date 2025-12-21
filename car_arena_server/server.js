@@ -64,7 +64,7 @@ const CFG = {
   ballDrag: 0.95,       // (war 0.985)
   wallBounce: 0.86,     // (war 0.92)
 
-  kick: 340,            // impulse scale (war 0.75)
+  kick: 340,            // impulse scale (gleich wie Client, nicht 0.35!)
   tickHz: 60,
   snapHz: 60,
 
@@ -182,10 +182,30 @@ function resolveCircle(aPos, aVel, aR, bPos, bVel, bR, kickScale){
 
   // if moving together, apply impulse
   if (vn < 0){
-    const impulse = (-vn) * (0.65 + kickScale);
+    // basis restitution
+    const e = 0.86; // wie CFG.restitution beim Client
+    const impulse = (-vn) * (1 + e);
     const j = n.clone().mul(impulse);
-    aVel.add(j.clone().mul(-0.55));
-    bVel.add(j.clone().mul( 1.00));
+
+    // car bekommt weniger zurück, ball mehr (asymmetrisch)
+    aVel.add(j.clone().mul(-0.45));
+    bVel.add(j.clone().mul( 0.95));
+
+    // Extra kick nur bei harten Treffern (wie beim Client)
+    const hardHit = Math.abs(vn);
+    if (hardHit > 115){
+      // kickScale ist jetzt groß (340), wird aber relativ zur Car-Geschwindigkeit skaliert
+      const carSpeed = aVel.len();
+      const kickFactor = carSpeed / 395; // normiert an carMaxSpeed
+      const extraKick = kickScale * kickFactor;
+      bVel.add(n.clone().mul(extraKick));
+    }
+
+    // Ball-Geschwindigkeit cappen (max ~650 px/s)
+    const bSpeed = bVel.len();
+    if (bSpeed > 650){
+      bVel.mul(650 / bSpeed);
+    }
   }
   return true;
 }
