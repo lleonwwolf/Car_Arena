@@ -602,24 +602,23 @@
 
         input.value = '';
 
-        // Bestimme Nickname basierend auf Online/Local
+        // Nickname bestimmen
         const nick = (mode === 'online' && NET.playerIndex !== null)
             ? (NET.playerNames[NET.playerIndex] || 'Player')
             : 'You';
 
-        if (text.startsWith('/')){
-            // Command
-            addChatMessage(nick, text, 'command');
-            // Server/lokal behandeln (implementieren wir später)
-            if (mode === 'online'){
+        const isCommand = text.startsWith('/');
+
+        if (mode === 'online'){
+            // Online: NICHT lokal anzeigen, nur zum Server senden → Server broadcastet zurück
+            if (isCommand){
                 wsSend({ type:'chat_command', text });
-            }
-        } else {
-            // Normal message
-            addChatMessage(nick, text, 'message');
-            if (mode === 'online'){
+            } else {
                 wsSend({ type:'chat_message', text });
             }
+        } else {
+            // Lokal: direkt anzeigen
+            addChatMessage(nick, text, isCommand ? 'command' : 'message');
         }
     }
 
