@@ -242,6 +242,94 @@
             font-size: 13px;
             box-shadow: var(--shadow-m);
         }
+
+        /* Chat Panel (rechts neben Canvas) */
+        #chatPanel{
+            position: fixed;
+            right: 12px;
+            top: 12px;
+            width: 280px;
+            height: 70vh;
+            max-height: 500px;
+            z-index: 9500;
+            display: none;
+            flex-direction: column;
+            background: linear-gradient(180deg, rgba(22,26,43,0.38), rgba(22,26,43,0.58));
+            border: 1px solid rgba(255,255,255,0.04);
+            border-radius: 14px;
+            box-shadow: var(--shadow-m);
+            pointer-events: auto;
+        }
+        #chatPanel.visible{ display: flex; }
+
+        #chatMessages{
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(96,165,250,.35) transparent;
+        }
+        #chatMessages::-webkit-scrollbar{ width: 8px; }
+        #chatMessages::-webkit-scrollbar-track{ background: transparent; }
+        #chatMessages::-webkit-scrollbar-thumb{
+            background: rgba(96,165,250,.45);
+            border-radius: 4px;
+        }
+
+        .chat-message{
+            font-size: 12px;
+            line-height: 1.3;
+            padding: 6px 8px;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.02);
+            color: var(--text);
+            word-wrap: break-word;
+        }
+        .chat-message.system{
+            background: rgba(96,165,250,0.1);
+            color: var(--blue);
+            font-style: italic;
+        }
+        .chat-message.command{
+            background: rgba(248,113,113,0.1);
+            color: var(--red);
+        }
+        .chat-message .nick{
+            font-weight: 700;
+            color: var(--blue);
+            margin-right: 4px;
+        }
+
+        #chatInput{
+            padding: 8px;
+            border-top: 1px solid rgba(255,255,255,0.04);
+            display: flex;
+            gap: 6px;
+        }
+        #chatInput input{
+            flex: 1;
+            height: 32px;
+            padding: 0 8px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(0,0,0,0.28);
+            color: var(--text);
+            font-size: 12px;
+            outline: none;
+        }
+        #chatInput input:focus{
+            border-color: rgba(255,255,255,0.2);
+        }
+        #chatInput button{
+            padding: 0 10px;
+            height: 32px;
+            font-size: 12px;
+            flex: 0;
+            box-shadow: var(--shadow-s);
+        }
     </style>
 </head>
 <body>
@@ -437,6 +525,17 @@
 </div>
 
 <div id="pingHud" hidden>Ping: —</div>
+
+<!-- Chat Panel (rechts neben Spielfeld) -->
+<div id="chatPanel">
+    <div style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.04); font-weight: 700; font-size: 13px;">Chat</div>
+    <div id="chatMessages"></div>
+    <div id="chatInput">
+        <input id="chatInputField" type="text" placeholder="Nachricht oder /cmd..." maxlength="120">
+        <button id="chatSendBtn">Send</button>
+    </div>
+</div>
+
 <canvas id="game" width="960" height="540"></canvas>
 
 <script>
@@ -445,6 +544,105 @@
     //  Fokus: direkte Steuerung, echter Boost, smarterer Bot
     //  Struktur: kleine Engine + Entities => leicht erweiterbar
     // =============================
+
+    // Chat-System
+    const CHAT = {
+        messages: [],  // { nick, text, type: 'message'|'system'|'command' }
+        maxMessages: 50,
+    };
+
+    function addChatMessage(nick, text, type='message'){
+        CHAT.messages.push({ nick, text, type });
+        if (CHAT.messages.length > CHAT.maxMessages){
+            CHAT.messages.shift();
+        }
+        renderChat();
+    }
+
+    function renderChat(){
+        const container = document.getElementById('chatMessages');
+        if (!container) return;
+
+        container.innerHTML = '';
+        CHAT.messages.forEach(msg => {
+            const div = document.createElement('div');
+            div.className = 'chat-message ' + msg.type;
+
+            if (msg.type === 'system'){
+                div.textContent = msg.text;
+            } else if (msg.type === 'command'){
+                div.innerHTML = `<span class="nick">${msg.nick}:</span> <span style="color:var(--red);">${msg.text}</span>`;
+            } else {
+                div.innerHTML = `<span class="nick">${msg.nick}:</span> ${msg.text}`;
+            }
+
+            container.appendChild(div);
+        });
+
+        // Auto-scroll to bottom
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function showChat(){
+        const panel = document.getElementById('chatPanel');
+        if (panel) panel.classList.add('visible');
+    }
+
+    function hideChat(){
+        const panel = document.getElementById('chatPanel');
+        if (panel) panel.classList.remove('visible');
+    }
+
+    function sendChatMessage(){
+        const input = document.getElementById('chatInputField');
+        if (!input) return;
+
+        const text = input.value.trim();
+        if (!text) return;
+
+        input.value = '';
+
+        // Bestimme Nickname basierend auf Online/Local
+        const nick = (mode === 'online' && NET.playerIndex !== null)
+            ? (NET.playerNames[NET.playerIndex] || 'Player')
+            : 'You';
+
+        if (text.startsWith('/')){
+            // Command
+            addChatMessage(nick, text, 'command');
+            // Server/lokal behandeln (implementieren wir später)
+            if (mode === 'online'){
+                wsSend({ type:'chat_command', text });
+            }
+        } else {
+            // Normal message
+            addChatMessage(nick, text, 'message');
+            if (mode === 'online'){
+                wsSend({ type:'chat_message', text });
+            }
+        }
+    }
+
+    // Chat UI Event Handler
+    (function initChatUI(){
+        const input = document.getElementById('chatInputField');
+        const btn = document.getElementById('chatSendBtn');
+
+        if (input){
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') sendChatMessage();
+            });
+        }
+        if (btn){
+            btn.addEventListener('click', sendChatMessage);
+        }
+    })();
+
+    // Chat anzeigen/verstecken basierend auf Game-State
+    function updateChatVisibility(){
+        if (running && mode === 'online') showChat();
+        else hideChat();
+    }
 
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
@@ -653,6 +851,20 @@
                 } else if (msg.type === 'room_closed'){
                     netSetStatus('Room closed');
                     leaveLobby();
+                } else if (msg.type === 'chat_message'){
+                    // Chat-Nachricht vom Server (von einem anderen Spieler)
+                    const nick = msg.nick || 'Player';
+                    const text = msg.text || '';
+                    addChatMessage(nick, text, 'message');
+                } else if (msg.type === 'chat_command'){
+                    // Chat-Befehl vom Server (von einem anderen Spieler)
+                    const nick = msg.nick || 'Player';
+                    const text = msg.text || '';
+                    addChatMessage(nick, text, 'command');
+                } else if (msg.type === 'chat_system'){
+                    // System-Nachricht vom Server
+                    const text = msg.text || '';
+                    addChatMessage('System', text, 'system');
                 }
             };
         });
@@ -1308,6 +1520,7 @@
         if (on) on.style.display = 'none';
         // Settings-Button zusammen mit den Panels ausblenden
         updateSettingsVisibility();
+        updateChatVisibility();
     }
 
 
@@ -1326,6 +1539,7 @@
          running = true;
          lastT = performance.now();
          requestAnimationFrame(loop);
+         updateChatVisibility();
     }
 
     function start(){
@@ -1342,6 +1556,7 @@
         running = true;
         lastT = performance.now();
         requestAnimationFrame(loop);
+        updateChatVisibility();
     }
 
     function checkGoals(){
@@ -1839,13 +2054,26 @@
         if (typeof origStart === 'function'){
             window.start = function(){
                 document.dispatchEvent(new Event('game:start'));
-                return origStart.apply(this, arguments);
+                const result = origStart.apply(this, arguments);
+                updateChatVisibility();
+                return result;
             };
         }
         if (typeof origStartOnline === 'function'){
             window.startOnline = function(){
                 document.dispatchEvent(new Event('game:startOnline'));
-                return origStartOnline.apply(this, arguments);
+                const result = origStartOnline.apply(this, arguments);
+                updateChatVisibility();
+                return result;
+            };
+        }
+        // Patch showMenu to also update chat visibility
+        const origShowMenu = window.showMenu;
+        if (typeof origShowMenu === 'function'){
+            window.showMenu = function(){
+                const result = origShowMenu.apply(this, arguments);
+                updateChatVisibility();
+                return result;
             };
         }
     })();
