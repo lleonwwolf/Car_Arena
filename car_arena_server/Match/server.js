@@ -679,6 +679,7 @@ function tryStartCountdown(room){
 const RELAY_URL = process.env.RELAY_URL || "wss://cararena-relay.up.railway.app/" || "wss://localhost:8081/";
 let relay = null;
 let relayConnected = false;
+let relayReconnectTimer = null;
 
 function relaySend(obj){
   try { if (relay && relayConnected) relay.send(JSON.stringify(obj)); } catch {}
@@ -686,58 +687,98 @@ function relaySend(obj){
 
 async function setupRelay(){
   if (!RELAY_URL) return;
-  relay = new (await import('ws')).WebSocket(RELAY_URL);
-  relay.onopen = () => {
-    relayConnected = true;
-    // Melde diese Instanz beim Relay an
-    relaySend({ type:'instance_online', port: PORT });
-    // NEU: Instanz ist bereit (nach Kaltstart/Standby-Wake)
-    relaySend({ type:'instance_ready', port: PORT, ts: nowMs() });
-    console.log(`[Server] Registered with Relay on port ${PORT}`);
-  };
-  relay.onclose = () => { relayConnected = false; };
-  relay.onerror = () => { relayConnected = false; };
-  relay.onmessage = (ev) => {
-    let msg; try{ msg = JSON.parse(ev.data); }catch{ return; }
+  console.log(`[Server] Connecting to Relay: ${RELAY_URL}`);
+   relay = new (await import('ws')).WebSocket(RELAY_URL);
 
-    // Relay weist ein Tournament-Match zu
-    if (msg.type === 'tournament_match_assign'){
-      const tournId = msg.tournamentId;
-      const matchId = msg.matchId;
-      const maxP = clamp(msg.maxPlayers || 2, 2, 4);
-      const room = createRoom(maxP, msg.settings || null);
+  relay.on('open', () => {
+     relayConnected = true;
+     // Melde diese Instanz beim Relay an
+    console.log(`[Server] Connected to Relay, registering on port ${PORT}`);
+     relaySend({ type:'instance_online', port: PORT });
+     // NEU: Instanz ist bereit (nach Kaltstart/Standby-Wake)
+     relaySend({ type:'instance_ready', port: PORT, ts: nowMs() });
+     console.log(`[Server] Registered with Relay on port ${PORT}`);
 
-      // Speichere Tournament-Info
-      room.tournamentInfo = {
-        id: tournId,
-        matchId: matchId,
-        relayConnected: true
-      };
-
-      // Spieler-Namen setzen
-      if (Array.isArray(msg.playerNames)){
-        for (let i=0;i<Math.min(msg.playerNames.length, room.maxPlayers); i++){
-          room.playerNames[i] = String(msg.playerNames[i] || '').slice(0,20);
-        }
-      }
-
-      // Tournament-Konfig
-      if (msg.tournament && typeof msg.tournament === 'object'){
-        room.tournament.enabled = true;
-        room.tournament.mode = msg.tournament.mode;
-        room.tournament.config = msg.tournament.config;
-        room.tournament.phase = msg.tournament.phase;
-      }
-
-      resetKickoff(room);
-      console.log(`[Server] Tournament match assigned: ${matchId} in room ${room.code}`);
-      relaySend({ type:'match_assigned_ok', matchId, code: room.code, port: PORT });
+    if (relayReconnectTimer) {
+      clearTimeout(relayReconnectTimer);
+      relayReconnectTimer = null;
     }
-  };
+  });
+
+  relay.on('close', () => {
+    console.log('[Server] Relay connection closed');
+    relayConnected = false;
+    // Versuche Reconnect nach 5 Sekunden
+    if (!relayReconnectTimer) {
+      relayReconnectTimer = setTimeout(() => {
+        console.log('[Server] Attempting Relay reconnect...');
+        setupRelay();
+      }, 5000);
+    }
+  });
+
+  relay.on('error', (err) => {
+    console.error('[Server] Relay error:', err.message);
+    relayConnected = false;
+  });
+
+  relay.on('message', (ev) => {
+     let msg; try{ msg = JSON.parse(ev.data); }catch{ return; }
+
+    if (msg.type === 'relay_welcome'){
+      console.log('[Server] Relay welcome received:', msg);
+      return;
+    }
+
+     // Relay weist ein Tournament-Match zu
+     if (msg.type === 'tournament_match_assign'){
+       const tournId = msg.tournamentId;
+       const matchId = msg.matchId;
+       const maxP = clamp(msg.maxPlayers || 2, 2, 4);
+       const room = createRoom(maxP, msg.settings || null);
+
+       // Speichere Tournament-Info
+       room.tournamentInfo = {
+         id: tournId,
+         matchId: matchId,
+         relayConnected: true
+       };
+
+       // Spieler-Namen setzen
+       if (Array.isArray(msg.playerNames)){
+         for (let i=0;i<Math.min(msg.playerNames.length, room.maxPlayers); i++){
+           room.playerNames[i] = String(msg.playerNames[i] || '').slice(0,20);
+         }
+       }
+
+       // Tournament-Konfig
+       if (msg.tournament && typeof msg.tournament === 'object'){
+         room.tournament.enabled = true;
+         room.tournament.mode = msg.tournament.mode;
+         room.tournament.config = msg.tournament.config;
+         room.tournament.phase = msg.tournament.phase;
+       }
+
+       resetKickoff(room);
+       console.log(`[Server] Tournament match assigned: ${matchId} in room ${room.code}`);
+       relaySend({ type:'match_assigned_ok', matchId, code: room.code, port: PORT });
+     }
+  });
 }
 
 // Setup Relay beim Start
-(async ()=>{ try{ await setupRelay(); }catch(e){ console.warn('Relay setup failed:', e.message); } })();
+(async ()=>{
+  try{
+    await setupRelay();
+  }catch(e){
+    console.warn('[Server] Relay setup failed:', e.message);
+    // Retry nach 10 Sekunden
+    setTimeout(() => {
+      console.log('[Server] Retrying Relay setup...');
+      setupRelay();
+    }, 10000);
+  }
+})();
 
 // heartbeat
 setInterval(() => {
@@ -806,5 +847,10 @@ setInterval(() => {
 server.listen(PORT, () => {
   console.log("Server on", PORT);
   // NEU: Falls Relay bereits verbunden, Instanz als bereit markieren
-  try{ relaySend({ type:'instance_ready', port: PORT, ts: nowMs() }); }catch{}
-});
+  setTimeout(() => {
+    if (relayConnected) {
+      console.log('[Server] Sending instance_ready after startup');
+      relaySend({ type:'instance_ready', port: PORT, ts: nowMs() });
+    }
+  }, 2000);
+ });

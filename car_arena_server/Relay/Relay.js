@@ -145,6 +145,8 @@ wss.on("connection", (ws) => {
   const clientId = Math.random().toString(36).slice(2, 10);
   let instancePort = null;
   let playerId = null;
+  ws.isAlive = true;
+  ws.on("pong", () => { ws.isAlive = true; });
 
   ws.on("message", (raw) => {
     let msg;
@@ -153,19 +155,23 @@ wss.on("connection", (ws) => {
     // ====== INSTANZ-MESSAGES ======
     if (msg.type === "instance_online") {
       instancePort = msg.port || 8080;
-      instances.set(instancePort, {
+      ws._host = req?.headers?.host || 'localhost'; // Host für wsUrl speichern
+       instances.set(instancePort, {
         ws,
         online: true,
         timestamp: Date.now(),
         load: 0,
-        port: instancePort
+-        port: instancePort
++        port: instancePort,
++        host: ws._host
       });
       console.log(`[Relay] Instance online: port ${instancePort}`);
       send(ws, { type: "relay_welcome", clientId, role: "instance" });
-      broadcastToPlayers({ type: "instance_status", port: instancePort, status: "online" });
+-      broadcastToPlayers({ type: "instance_status", port: instancePort, status: "online" });
 
       // Pending-Clients jetzt zuweisen
-      flushPendingToInstance(instancePort, ws._host);
+-      flushPendingToInstance(instancePort, ws._host);
++      flushPendingToInstance(instancePort, instances.get(instancePort)?.host);
        return;
     }
 
@@ -178,7 +184,8 @@ wss.on("connection", (ws) => {
         instances.set(port, inst);
         console.log(`[Relay] Instance ready: port ${port}`);
         // Pending-Clients jetzt zuweisen
-        flushPendingToInstance(port, ws._host);
+-        flushPendingToInstance(port, ws._host);
++        flushPendingToInstance(port, inst.host);
        }
        return;
     }
@@ -217,7 +224,8 @@ wss.on("connection", (ws) => {
     // ====== PLAYER/CLIENT MESSAGES ======
     if (msg.type === "player_connect") {
       playerId = msg.playerId || clientId;
-      playerClients.set(playerId, { ws, currentMatch: null, tournament: null });
++      ws._host = req?.headers?.host || 'localhost';
+       playerClients.set(playerId, { ws, currentMatch: null, tournament: null });
       console.log(`[Relay] Player connected: ${playerId}`);
       send(ws, { type: "relay_welcome", clientId, role: "player" });
       return;
@@ -292,27 +300,43 @@ wss.on("connection", (ws) => {
     // NEU: Client sendet Create/Join Request an Relay
     if (msg.type === 'create_game_room'){
       const pick = pickActiveInstance();
-      if (pick){
-        send(ws, { type:'assign_instance', port: pick.port, wsUrl: `ws://${ws._host || 'localhost'}:${pick.port}/`, kind:'host' });
++      console.log(`[Relay] create_game_room: ${pick ? `Found instance ${pick.port}` : 'No instances available'}`);
+       if (pick){
+-        send(ws, { type:'assign_instance', port: pick.port, wsUrl: `ws://${ws._host || 'localhost'}:${pick.port}/`, kind:'host' });
++        const wsUrl = `ws://${pick.host || window.location?.hostname || 'localhost'}:${pick.port}/`;
++        console.log(`[Relay] Assigning host to ${wsUrl}`);
++        send(ws, { type:'assign_instance', port: pick.port, wsUrl, kind:'host' });
         return;
       }
       // Keine Instanz online → Wake + Queue
-      send(ws, { type:'assign_pending' });
++      console.log(`[Relay] No instance online, triggering wake...`);
+       send(ws, { type:'assign_pending' });
       pendingCreates.push({ ws, payload: { maxPlayers: msg.maxPlayers, playerName: msg.playerName, settings: msg.settings }});
-      triggerWakeProvider().then(()=>{ /* warten auf instance_ready */ });
-      return;
+-      triggerWakeProvider().then(()=>{ /* warten auf instance_ready */ });
++      triggerWakeProvider().then((success)=>{
++        console.log(`[Relay] Wake provider ${success ? 'succeeded' : 'failed'}`);
++      });
+       return;
     }
 
     if (msg.type === 'join_game_room'){
       const pick = pickActiveInstance();
-      if (pick){
-        send(ws, { type:'assign_instance', port: pick.port, wsUrl: `ws://${ws._host || 'localhost'}:${pick.port}/`, kind:'join' });
++      console.log(`[Relay] join_game_room: ${pick ? `Found instance ${pick.port}` : 'No instances available'}`);
+       if (pick){
+-        send(ws, { type:'assign_instance', port: pick.port, wsUrl: `ws://${ws._host || 'localhost'}:${pick.port}/`, kind:'join' });
++        const wsUrl = `ws://${pick.host || window.location?.hostname || 'localhost'}:${pick.port}/`;
++        console.log(`[Relay] Assigning join to ${wsUrl}`);
++        send(ws, { type:'assign_instance', port: pick.port, wsUrl, kind:'join' });
         return;
       }
-      send(ws, { type:'assign_pending' });
++      console.log(`[Relay] No instance online, triggering wake...`);
+       send(ws, { type:'assign_pending' });
       pendingJoins.push({ ws, payload: { code: msg.code, playerName: msg.playerName }});
-      triggerWakeProvider().then(()=>{ /* warten auf instance_ready */ });
-      return;
+-      triggerWakeProvider().then(()=>{ /* warten auf instance_ready */ });
++      triggerWakeProvider().then((success)=>{
++        console.log(`[Relay] Wake provider ${success ? 'succeeded' : 'failed'}`);
++      });
+       return;
     }
 
     if (msg.type === "tournament_start") {
@@ -357,8 +381,8 @@ wss.on("connection", (ws) => {
     if (instancePort) {
       console.log(`[Relay] Instance disconnected: port ${instancePort}`);
       instances.delete(instancePort);
-      broadcastToPlayers({ type: "instance_status", port: instancePort, status: "offline" });
-    }
+-      broadcastToPlayers({ type: "instance_status", port: instancePort, status: "offline" });
+     }
     if (playerId) {
       console.log(`[Relay] Player disconnected: ${playerId}`);
       playerClients.delete(playerId);
@@ -370,29 +394,38 @@ wss.on("connection", (ws) => {
   });
 });
 
-// Hilfsfunktion: simple clamp für Zahlen
-function clampNum(v, a, b){
-  const n = Number(v);
-  if (Number.isFinite(n)) return Math.max(a, Math.min(b, n));
-  return a;
-}
+// Heartbeat für WebSocket-Verbindungen
+setInterval(() => {
+  wss.clients.forEach(ws => {
+    if (ws.isAlive === false) {
+      console.log('[Relay] Terminating dead connection');
+      return ws.terminate();
+    }
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
 
 // Heartbeat / Status-Logs (unverändert)
 setInterval(() => {
   const now = Date.now();
-  const timeout = 30000;
-  for (const [port, inst] of instances.entries()) {
+-  const timeout = 30000;
++  const timeout = 60000; // 60 Sekunden Timeout statt 30
+   for (const [port, inst] of instances.entries()) {
     if (now - inst.timestamp > timeout) {
       console.log(`[Relay] Instance timeout: port ${port}`);
       instances.delete(port);
-      broadcastToPlayers({ type: "instance_status", port, status: "timeout" });
-    }
+-      broadcastToPlayers({ type: "instance_status", port, status: "timeout" });
+     }
   }
-}, 10000);
+-}, 10000);
++}, 20000);
 
 setInterval(() => {
-  console.log(`[Relay] Status: ${instances.size} instances, ${playerClients.size} players, ${tournaments.size} tournaments`);
-}, 60000);
+-  console.log(`[Relay] Status: ${instances.size} instances, ${playerClients.size} players, ${tournaments.size} tournaments`);
++  console.log(`[Relay] Status: ${instances.size} instances (${Array.from(instances.keys()).join(', ')}), ${playerClients.size} players, ${tournaments.size} tournaments`);
++  console.log(`[Relay] Pending: ${pendingCreates.length} creates, ${pendingJoins.length} joins`);
+ }, 60000);
 
 server.listen(PORT, () => {
   console.log(`[Relay] Server listening on port ${PORT}`);
