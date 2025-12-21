@@ -34,6 +34,19 @@ function broadcastToPlayers(obj) {
   for (const player of playerClients.values()) send(player.ws, obj);
 }
 
+// Hilfsfunktion: weise wartende Clients einer Instanz zu
+function flushPendingToInstance(port, host){
+  if (!port) return;
+  while (pendingCreates.length){
+    const req = pendingCreates.shift();
+    send(req.ws, { type:'assign_instance', port, wsUrl: `ws://${host || req.ws._host || 'localhost'}:${port}/`, kind:'host' });
+  }
+  while (pendingJoins.length){
+    const req = pendingJoins.shift();
+    send(req.ws, { type:'assign_instance', port, wsUrl: `ws://${host || req.ws._host || 'localhost'}:${port}/`, kind:'join' });
+  }
+}
+
 // ---------- Tournament Management ----------
 function createTournament(config) {
   const tournId = Math.random().toString(36).slice(2, 10).toUpperCase();
@@ -151,28 +164,9 @@ wss.on("connection", (ws) => {
       send(ws, { type: "relay_welcome", clientId, role: "instance" });
       broadcastToPlayers({ type: "instance_status", port: instancePort, status: "online" });
 
-      // Falls Pending-Requests existieren, sofort bedienen
-      while (pendingCreates.length > 0) {
-        const req = pendingCreates.shift();
-        send(req.ws, {
-          type: 'room_created',
-          gamePort: instancePort,
-          code: 'WAITING',
-          playerName: req.payload.playerName,
-          maxPlayers: req.payload.maxPlayers
-        });
-      }
-      while (pendingJoins.length > 0) {
-        const req = pendingJoins.shift();
-        send(req.ws, {
-          type: 'join_ok',
-          gamePort: instancePort,
-          code: req.payload.code,
-          playerName: req.payload.playerName,
-          maxPlayers: 2
-        });
-      }
-      return;
+      // Pending-Clients jetzt zuweisen
+      flushPendingToInstance(instancePort, ws._host);
+       return;
     }
 
     if (msg.type === "instance_ready"){
@@ -183,29 +177,10 @@ wss.on("connection", (ws) => {
         inst.timestamp = Date.now();
         instances.set(port, inst);
         console.log(`[Relay] Instance ready: port ${port}`);
-        // Bediene Pending-Queues
-        while (pendingCreates.length > 0) {
-          const req = pendingCreates.shift();
-          send(req.ws, {
-            type: 'room_created',
-            gamePort: port,
-            code: 'WAITING',
-            playerName: req.payload.playerName,
-            maxPlayers: req.payload.maxPlayers
-          });
-        }
-        while (pendingJoins.length > 0) {
-          const req = pendingJoins.shift();
-          send(req.ws, {
-            type: 'join_ok',
-            gamePort: port,
-            code: req.payload.code,
-            playerName: req.payload.playerName,
-            maxPlayers: 2
-          });
-        }
-      }
-      return;
+        // Pending-Clients jetzt zuweisen
+        flushPendingToInstance(port, ws._host);
+       }
+       return;
     }
 
     if (msg.type === "match_finished") {
@@ -316,37 +291,27 @@ wss.on("connection", (ws) => {
 
     // NEU: Client sendet Create/Join Request an Relay
     if (msg.type === 'create_game_room'){
-      // Wähle aktive Instanz, sonst wecke Provider
       const pick = pickActiveInstance();
       if (pick){
-        // Sofort zuweisen
-        send(ws, { type:'assign_instance', port: pick.port, wsUrl: `ws://${ws._host || 'localhost'}:${pick.port}/` });
+        send(ws, { type:'assign_instance', port: pick.port, wsUrl: `ws://${ws._host || 'localhost'}:${pick.port}/`, kind:'host' });
         return;
       }
-      // Keine Instanzen online → wecken
+      // Keine Instanz online → Wake + Queue
       send(ws, { type:'assign_pending' });
-      triggerWakeProvider().then((ok)=>{
-        if (!ok) return;
-        // Warte auf „instance_ready“
-        const readyHandler = waitForInstanceReady(ws, null);
-        // Temporär: hänge globalen Listener an alle Instanz-WS
-        // In diesem einfachen Relay-Setup checken wir bei jeder neuen instance_ready Nachricht
-        // und senden dann assign_instance an den wartenden Client (ws)
-        wss.on('connection', ()=>{}); // noop: Platzhalter für event scopes
-        // Wir intercepten onmessage oben; hier verlassen wir uns darauf, dass eine Instanz „instance_ready“ sendet
-        // und der oben definierte Handler greift via dieser Nachricht (siehe if (msg.type === "instance_ready"))
-      });
+      pendingCreates.push({ ws, payload: { maxPlayers: msg.maxPlayers, playerName: msg.playerName, settings: msg.settings }});
+      triggerWakeProvider().then(()=>{ /* warten auf instance_ready */ });
       return;
     }
 
     if (msg.type === 'join_game_room'){
       const pick = pickActiveInstance();
       if (pick){
-        send(ws, { type:'assign_instance', port: pick.port, wsUrl: `ws://${ws._host || 'localhost'}:${pick.port}/` });
+        send(ws, { type:'assign_instance', port: pick.port, wsUrl: `ws://${ws._host || 'localhost'}:${pick.port}/`, kind:'join' });
         return;
       }
       send(ws, { type:'assign_pending' });
-      triggerWakeProvider().then(()=>{/* analog wie oben */});
+      pendingJoins.push({ ws, payload: { code: msg.code, playerName: msg.playerName }});
+      triggerWakeProvider().then(()=>{ /* warten auf instance_ready */ });
       return;
     }
 
