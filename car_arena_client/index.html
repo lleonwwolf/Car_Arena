@@ -40,6 +40,25 @@
         #prefsModal { z-index: 20000; }
         #prefsModal .modal-content { z-index: 20001; }
 
+        /* Tournament Overlay */
+        #tournamentOverlay{
+            position:fixed; inset:0; z-index:20050;
+            display:none; align-items:center; justify-content:center;
+            backdrop-filter: blur(4px); background: rgba(0,0,0,0.55);
+        }
+        #tournamentOverlay.visible{ display:flex; }
+        #tournamentOverlay .panel{
+            width:min(90vw, 780px); max-height:80vh; overflow-y:auto;
+            background: linear-gradient(180deg,#0b122a,#070b1d);
+            border:1px solid #1f2937; border-radius:18px; padding:18px;
+            box-shadow: var(--shadow-l); color:var(--text);
+        }
+        #tournamentOverlay h3{ margin:0 0 10px; }
+        #tournamentOverlay .section{ margin-bottom:14px; padding:10px; background:rgba(255,255,255,0.03); border-radius:10px; }
+        #tournamentOverlay .group{ margin-bottom:8px; }
+        #tournamentOverlay .match{ font-size:13px; margin:2px 0; color:var(--muted); }
+        #tournamentOverlay .status{ font-size:12px; color:var(--muted); }
+
         html,body{
             height:100%; margin:0;
             background:radial-gradient(70% 90% at 50% 10%, #1f2a4a 0%, #040712 60%, #020617 100%);
@@ -740,6 +759,22 @@
     </div>
 </div>
 
+<div id="tournamentOverlay" aria-hidden="true">
+    <div class="panel">
+        <h3>Turnierübersicht</h3>
+        <div id="tournamentSummary" class="status"></div>
+        <div class="section">
+            <h4>Gruppen</h4>
+            <div id="tournamentGroups"></div>
+        </div>
+        <div class="section">
+            <h4>KO‑Baum</h4>
+            <div id="tournamentBracket"></div>
+        </div>
+        <div class="status" id="tournamentPauseInfo"></div>
+    </div>
+</div>
+
 <canvas id="game" width="960" height="540"></canvas>
 
 <script>
@@ -754,6 +789,9 @@
         messages: [],  // { nick, text, type: 'message'|'system'|'command' }
         maxMessages: 50,
     };
+
+    // Sicherstellen, dass das UI-Init-Flag existiert, bevor initUI() es nutzt
+    if (typeof UI_INITIALIZED === 'undefined') { var UI_INITIALIZED = false; }
 
     function addChatMessage(nick, text, type='message'){
         CHAT.messages.push({ nick, text, type });
@@ -892,8 +930,9 @@
     // Standard-CFG sichern, um lokale Spiele nicht durch Online-Overrides zu beeinflussen
     const CFG_DEFAULT = JSON.parse(JSON.stringify(CFG));
 
-    // ---------- Online (Server-Authoritative via WebSocket) — jetzt über Relay ----------
-    // Trage hier deine Relay-URL ein (wss://...):
+    // ---------- Online (Server-Authoritative via WebSocket) ----------
+    // Trage hier deine Render-URL ein (wss://...):
+    // Verwende das Relay wie in scratch.html
     const WS_URL = "wss://cararena-relay.up.railway.app/" || "wss://localhost:8081/";
 
     const NET = {
@@ -902,17 +941,124 @@
         roomCode: "",
         playerIndex: null,
         playerId: null,
-        lastState: null,
-        lastStateAt: 0,
-        sendTimer: null,
-        seq: 0,
-        playerNames: {},
+        // Merke, ob zuletzt Host oder Join angefordert wurde (für assign_instance)
+        pendingAction: null, // 'host' | 'join' | null
         pingTimer: null,
         lastPingSentAt: 0,
-        pingMs: null,
-        countdownStartAt: null,
+        seq: 0,
+        playerNames: {},  // { 0: "Name1", 1: "Name2", ... }
+        countdownStartAt: null, // timestamp wann countdown_start kam
+        role: 'player',           // 'player' | 'viewer'
         currentTournament: null,
     };
+
+    // Tournament-Client-Status (wurde versehentlich entfernt)
+    const TOURNAMENT = {
+        enabled: false,
+        mode: null,
+        phase: null,
+        config: null,
+        groups: [],
+        bracket: [],
+        paused: false,
+        pauseEndsAt: 0
+    };
+
+    // Server-Overrides anwenden (aus scratch)
+    function applyOnlineCfg(partial){
+        if (!partial) return;
+        CFG.carAcc = (typeof partial.carAcc === 'number') ? partial.carAcc : CFG.carAcc;
+        CFG.carMaxSpeed = (typeof partial.carMaxSpeed === 'number') ? partial.carMaxSpeed : CFG.carMaxSpeed;
+        CFG.carDrag = (typeof partial.carDrag === 'number') ? partial.carDrag : CFG.carDrag;
+        CFG.boostAccMul = (typeof partial.boostAccMul === 'number') ? partial.boostAccMul : CFG.boostAccMul;
+        CFG.boostMaxMul = (typeof partial.boostMaxMul === 'number') ? partial.boostMaxMul : CFG.boostMaxMul;
+        CFG.boostDrain = (typeof partial.boostDrain === 'number') ? partial.boostDrain : CFG.boostDrain;
+        CFG.boostRegen = (typeof partial.boostRegen === 'number') ? partial.boostRegen : CFG.boostRegen;
+        CFG.ballDrag = (typeof partial.ballDrag === 'number') ? partial.ballDrag : CFG.ballDrag;
+        CFG.wallRestitution = (typeof partial.wallRestitution === 'number') ? partial.wallRestitution : CFG.wallRestitution;
+        CFG.kickImpulse = (typeof partial.kickImpulse === 'number') ? partial.kickImpulse : CFG.kickImpulse;
+    }
+
+    // Aktuelle lokale Settings aus den Slidern (aus scratch)
+    function getCurrentSettings(){
+        const numFrom = (id, base, minPct=50, maxPct=150) => {
+            const el = document.getElementById(id);
+            const pct = el ? Number(el.value||100) : 100;
+            const f = Math.max(minPct/100, Math.min(maxPct/100, pct/100));
+            return base * f;
+        };
+        return {
+            carAccel: numFrom('slider-carAccel', CFG_DEFAULT.carAcc),
+            carMaxV: numFrom('slider-carMaxV', CFG_DEFAULT.carMaxSpeed, 70, 130),
+            carDrag: numFrom('slider-carDrag', CFG_DEFAULT.carDrag, 50, 150),
+            boostAccelMul: numFrom('slider-boostAccMul', CFG_DEFAULT.boostAccMul, 70, 150),
+            boostMaxMul: numFrom('slider-boostAccMul', CFG_DEFAULT.boostMaxMul, 70, 150),
+            boostDrain: numFrom('slider-kickImpulse', CFG_DEFAULT.boostDrain, 60, 150),
+            boostRegen: numFrom('slider-boostRegen', CFG_DEFAULT.boostRegen, 50, 150),
+            ballDrag: numFrom('slider-ballDrag', CFG_DEFAULT.ballDrag, 70, 130),
+            wallBounce: numFrom('slider-wallBounce', CFG_DEFAULT.wallRestitution, 70, 140),
+            kick: numFrom('slider-kickImpulse', CFG_DEFAULT.kickImpulse, 60, 150)
+        };
+    }
+
+    // Sichtbarkeit des Settings-Buttons steuern (aus scratch)
+    function updateSettingsVisibility(){
+        const btn = document.getElementById('btnSettings');
+        const lo = document.getElementById('localOptions');
+        const on = document.getElementById('onlineOptions');
+        if (!btn) return;
+        const anyVisible = (lo && lo.style.display !== 'none') || (on && on.style.display !== 'none');
+        btn.style.display = anyVisible ? '' : 'none';
+    }
+
+    function updateTournamentOverlay(){
+        const overlay = document.getElementById('tournamentOverlay');
+        const summary = document.getElementById('tournamentSummary');
+        const groupsEl = document.getElementById('tournamentGroups');
+        const bracketEl = document.getElementById('tournamentBracket');
+        const pauseEl = document.getElementById('tournamentPauseInfo');
+        if (!overlay || !summary || !groupsEl || !bracketEl || !pauseEl) return;
+
+        summary.textContent = TOURNAMENT.enabled
+            ? `Mode: ${TOURNAMENT.mode || '—'} • Phase: ${TOURNAMENT.phase || '—'}`
+            : 'Kein Turnier aktiv';
+
+        groupsEl.innerHTML = '';
+        (TOURNAMENT.groups || []).forEach((g, idx)=>{
+            const div = document.createElement('div');
+            div.className = 'group';
+            div.innerHTML = `<strong>Gruppe ${idx+1}</strong>`;
+            (g.players || g).forEach(p=>{
+                const line = document.createElement('div');
+                line.className = 'match';
+                line.textContent = typeof p === 'string' ? p : `${p.name||'Player'} (${p.points||0} P / GD ${p.gd||0})`;
+                div.appendChild(line);
+            });
+            groupsEl.appendChild(div);
+        });
+
+        bracketEl.innerHTML = '';
+        (TOURNAMENT.bracket || []).forEach((m)=>{
+            const line = document.createElement('div');
+            line.className = 'match';
+            line.textContent = `${m.p1?.name||'TBD'} vs ${m.p2?.name||'TBD'}${m.score ? `  (${m.score[0]}:${m.score[1]})` : ''}`;
+            bracketEl.appendChild(line);
+        });
+
+        if (TOURNAMENT.paused){
+            const remaining = Math.max(0, Math.ceil((TOURNAMENT.pauseEndsAt - performance.now())/1000));
+            pauseEl.textContent = `Pause: Noch ${remaining}s`;
+        } else pauseEl.textContent = '';
+    }
+
+    function showTournamentOverlay(){
+        if (!TOURNAMENT.enabled) return;
+        document.getElementById('tournamentOverlay')?.classList.add('visible');
+        updateTournamentOverlay();
+    }
+    function hideTournamentOverlay(){
+        document.getElementById('tournamentOverlay')?.classList.remove('visible');
+    }
 
     // client-seitige Erwartung (für Anzeige bevor Server bestätigt)
     let expectedPlayers = 2;
@@ -922,8 +1068,9 @@
         if (el) el.textContent = 'Status: ' + text;
         const hud = document.getElementById('netHud');
         if (hud){
+            const roleLabel = (NET.playerIndex === null) ? 'Viewer' : ('P' + (NET.playerIndex??'?'));
             hud.textContent = (mode==='online' && NET.connected)
-                ? ('Online • Room ' + NET.roomCode + ' • P' + (NET.playerIndex??'?'))
+                ? ('Online • Room ' + NET.roomCode + ' • ' + roleLabel)
                 : '';
         }
     }
@@ -941,6 +1088,7 @@
         NET.lastState = null;
         NET.roomCode = "";
         NET.playerIndex = null;
+        // Ping-Intervall sauber stoppen
         try{ if (NET.pingTimer) clearInterval(NET.pingTimer); }catch{}
         NET.pingTimer = null;
         NET.pingMs = null;
@@ -952,6 +1100,7 @@
         netSetStatus('Offline');
     }
 
+    // Relay-basierte Verbindung: zunächst zum Relay, dann nach assign_instance zur Match-Instanz
     function netConnect(){
         return new Promise((resolve, reject) => {
             if (!WS_URL || WS_URL.includes('YOUR-RELAY-SERVICE')){
@@ -959,64 +1108,49 @@
                 reject(new Error('WS_URL not set'));
                 return;
             }
-
             netSetStatus('Relay: Verbinden…');
-            const ws = new WebSocket(WS_URL);
-            NET.ws = ws;
-
-            ws.onopen = () => {
+            const relayWs = new WebSocket(WS_URL);
+            NET.ws = relayWs;
+            relayWs.onopen = () => {
                 NET.connected = true;
                 NET.playerId = Math.random().toString(36).slice(2, 10);
-                // Registriere dich beim Relay als Player
                 wsSend({ type: 'player_connect', playerId: NET.playerId });
                 netSetStatus('Relay: Verbunden');
             };
-            ws.onclose = () => {
-                NET.connected = false;
-                netSetStatus('Relay: Getrennt');
-            };
-            ws.onerror = (e) => {
-                NET.connected = false;
-                netSetStatus('Relay: Fehler');
-                reject(e);
-            };
+            relayWs.onclose = () => { NET.connected = false; netSetStatus('Relay: Getrennt'); };
+            relayWs.onerror = (e) => { NET.connected = false; netSetStatus('Relay: Fehler'); reject(e); };
+            relayWs.onmessage = (ev) => {
+                let msg; try{ msg = JSON.parse(ev.data); }catch{ return; }
 
-            ws.onmessage = (ev) => {
-                let msg;
-                try{ msg = JSON.parse(ev.data); }catch{ return; }
+                if (msg.type === 'relay_welcome'){ return; }
+                if (msg.type === 'assign_pending'){ netSetStatus('Relay: Instanz wird gestartet…'); return; }
 
-                if (msg.type === 'relay_welcome'){
-                    console.log('[Relay] Welcome:', msg);
-                    return;
-                }
-
-                // NEU: Relay signalisiert, dass eine Instanz aufgeweckt wird
-                if (msg.type === 'assign_pending'){
-                    netSetStatus('Relay: Instanz wird gestartet…');
-                    return;
-                }
-
-                // NEU/weiterhin: Relay liefert direkt Ziel-Instanz via room_created/join_ok inkl. gamePort
-                if (msg.type === 'room_created' || msg.type === 'join_ok'){
-                    const gamePort = msg.gamePort || 8080;
-                    const gameWsUrl = `ws://${window.location.hostname}:${gamePort}/`;
-                    ws.close();
+                // Bevorzugt: direkte Zuweisung einer Instanz
+                if (msg.type === 'assign_instance'){
+                    const gameWsUrl = msg.wsUrl || `ws://${window.location.hostname}:${msg.port}/`;
+                    relayWs.close();
                     NET.connected = false;
-
                     netSetStatus('Game-Server: Verbinden…');
                     const gameWs = new WebSocket(gameWsUrl);
                     NET.ws = gameWs;
-                    NET.connected = true;
 
                     gameWs.onopen = () => {
-                        wsSend({
-                            type: msg.type === 'room_created' ? 'create_room' : 'join_room',
-                            code: msg.code,
-                            playerId: NET.playerId,
-                            playerName: msg.playerName,
-                            maxPlayers: msg.maxPlayers
-                        });
+                        NET.connected = true;
                         netSetStatus('Game-Server: Verbunden');
+
+                        // Ping-Intervall starten (Client misst Roundtrip)
+                        if (!NET.pingTimer){
+                            NET.pingTimer = setInterval(() => {
+                                if (!NET.ws || NET.ws.readyState !== 1) return;
+                                NET.lastPingSentAt = performance.now();
+                                wsSend({ type:'ping', t: NET.lastPingSentAt });
+                            }, 1500);
+                        }
+
+                        // Custom-Event auslösen, damit create_room/join_room gesendet wird
+                        document.dispatchEvent(new CustomEvent('relay:assigned', {
+                            detail: { kind: NET.pendingAction || 'host' }
+                        }));
                         resolve();
                     };
                     gameWs.onclose = () => { NET.connected = false; netSetStatus('Game-Server: Getrennt'); };
@@ -1028,11 +1162,50 @@
                     return;
                 }
 
-                // ...existing code (andere Relay-Events)...
+                // Rückfall: wenn Relay direkt room_created/join_ok mit Port liefert
+                if (msg.type === 'room_created' || msg.type === 'join_ok'){
+                    const gamePort = msg.gamePort || 8080;
+                    const gameWsUrl = `ws://${window.location.hostname}:${gamePort}/`;
+                    relayWs.close();
+                    NET.connected = false;
+                    netSetStatus('Game-Server: Verbinden…');
+                    const gameWs = new WebSocket(gameWsUrl);
+                    NET.ws = gameWs;
+
+                    gameWs.onopen = () => {
+                        NET.connected = true;
+                        netSetStatus('Game-Server: Verbunden');
+
+                        if (!NET.pingTimer){
+                            NET.pingTimer = setInterval(() => {
+                                if (!NET.ws || NET.ws.readyState !== 1) return;
+                                NET.lastPingSentAt = performance.now();
+                                wsSend({ type:'ping', t: NET.lastPingSentAt });
+                            }, 1500);
+                        }
+
+                        // Sende create_room/join_room direkt, falls Port/Code vom Relay kam
+                        const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
+                        if (msg.type === 'room_created'){
+                            wsSend({ type:'create_room', maxPlayers: msg.maxPlayers || (expectedPlayers||2), playerName, settings: getCurrentSettings() });
+                        } else {
+                            wsSend({ type:'join_room', code: msg.code, playerName });
+                        }
+                        resolve();
+                    };
+                    gameWs.onclose = () => { NET.connected = false; netSetStatus('Game-Server: Getrennt'); };
+                    gameWs.onerror = () => { NET.connected = false; netSetStatus('Game-Server: Fehler'); };
+                    gameWs.onmessage = (ev2) => {
+                        let gameMsg; try{ gameMsg = JSON.parse(ev2.data); }catch{ return; }
+                        handleGameMessage(gameMsg);
+                    };
+                    return;
+                }
             };
         });
     }
 
+    // Zentrale Handler bleiben wie zuvor
     function handleGameMessage(msg){
         if (msg.type === 'pong'){
             const sent = (typeof msg.t === 'number') ? msg.t : NET.lastPingSentAt;
@@ -1041,7 +1214,6 @@
             updatePingHud(rtt);
             return;
         }
-
         if (msg.type === 'room_created'){
             NET.roomMaxPlayers = msg.maxPlayers || 2;
             expectedPlayers = NET.roomMaxPlayers;
@@ -1053,7 +1225,9 @@
             enterLobby();
             netSetStatus('Host • Code ' + NET.roomCode);
             if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
-        } else if (msg.type === 'join_ok'){
+            return;
+        }
+        if (msg.type === 'join_ok'){
             NET.roomMaxPlayers = msg.maxPlayers || 2;
             expectedPlayers = NET.roomMaxPlayers;
             NET.roomCode = msg.code;
@@ -1064,10 +1238,14 @@
             enterLobby();
             netSetStatus('Joined • Code ' + NET.roomCode);
             if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
-        } else if (msg.type === 'join_failed'){
+            return;
+        }
+        if (msg.type === 'join_failed'){
             netSetStatus('Join failed: ' + (msg.reason || 'unknown'));
             leaveLobby();
-        } else if (msg.type === 'state'){
+            return;
+        }
+        if (msg.type === 'state'){
             NET.lastState = msg;
             NET.lastStateAt = performance.now();
             if (msg.playerNames) NET.playerNames = msg.playerNames;
@@ -1077,51 +1255,1394 @@
                 startOnline();
                 if (lobbyEl) lobbyEl.style.display = 'none';
             }
-        } else if (msg.type === 'start'){
+            return;
+        }
+        if (msg.type === 'start'){
             if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
+            NET.role = (NET.playerIndex === null) ? 'viewer' : 'player';
             startOnline();
             const lobbyEl = document.getElementById('lobby');
             if (lobbyEl) lobbyEl.style.display = 'none';
-        } else if (msg.type === 'player_joined' || msg.type === 'player_left'){
+            return;
+        }
+        if (msg.type === 'player_joined' || msg.type === 'player_left'){
             if (msg.playerNames) { NET.playerNames = msg.playerNames; }
             const lobbyEl = document.getElementById('lobby');
             if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
-        } else if (msg.type === 'countdown_start'){
+            return;
+        }
+        if (msg.type === 'countdown_start'){
             NET.countdownStartAt = performance.now();
             const lobbyEl = document.getElementById('lobby');
             if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
             showCountdown(3, 3, 'Spiel startet in');
-        } else if (msg.type === 'switch_failed'){
+            return;
+        }
+        if (msg.type === 'switch_failed'){
             netSetStatus('Teamwechsel fehlgeschlagen: ' + (msg.reason || 'busy'));
-        } else if (msg.type === 'switch_ok'){
+            return;
+        }
+        if (msg.type === 'switch_ok'){
             if (typeof msg.newIndex === 'number') NET.playerIndex = msg.newIndex;
-        } else if (msg.type === 'room_closed'){
+            return;
+        }
+        if (msg.type === 'room_closed'){
             netSetStatus('Room closed');
             leaveLobby();
-        } else if (msg.type === 'chat_message'){
+            return;
+        }
+        if (msg.type === 'chat_message'){
             const nick = msg.nick || 'Player';
             const text = msg.text || '';
             addChatMessage(nick, text, 'message');
-        } else if (msg.type === 'chat_command'){
+            return;
+        }
+        if (msg.type === 'chat_command'){
             const nick = msg.nick || 'Player';
             const text = msg.text || '';
             addChatMessage(nick, text, 'command');
-        } else if (msg.type === 'chat_system'){
-            const text = msg.text || '';
-            addChatMessage('System', text, 'system');
-        } else if (msg.type === 'tournament_config'){
-            TOURN.enabled = true; TOURN.mode = msg.mode; TOURN.config = msg.config; TOURN.phase = msg.phase || 'Gruppenphase';
-            renderTournamentOverlay();
-        } else if (msg.type === 'tournament_state'){
-            TOURN.enabled = true; TOURN.phase = msg.phase || TOURN.phase; TOURN.groups = msg.groups || []; TOURN.bracket = msg.bracket || [];
-            renderTournamentOverlay();
-        } else if (msg.type === 'tournament_pause'){
-            TOURN.pauseUntil = performance.now() + 15000;
-            showCountdown(15, 15, 'Turnier-Pause');
-        } else if (msg.type === 'tournament_resume'){
-            TOURN.pauseUntil = 0; hideCountdown();
+            return;
+        }
+        if (msg.type === 'chat_system'){
+            addChatMessage('System', msg.text || '', 'system');
+            return;
+        }
+        if (msg.type === 'goal'){
+            if (Array.isArray(msg.score)){
+                score = msg.score.slice();
+                s1El.textContent = score[0];
+                s2El.textContent = score[1];
+            }
+            addChatMessage('System', `Tor für ${msg.scorer === 0 ? 'Blau' : 'Rot'}!`, 'system');
+            return;
+        }
+        if (msg.type === 'countdown_cancelled'){
+            NET.countdownStartAt = null;
+            hideCountdown();
+            return;
+        }
+        if (msg.type === 'tournament_config'){
+            TOURNAMENT.enabled = true;
+            TOURNAMENT.mode = msg.mode || null;
+            TOURNAMENT.phase = msg.phase || null;
+            TOURNAMENT.config = msg.config || null;
+            updateTournamentOverlay();
+            return;
+        }
+        if (msg.type === 'tournament_state'){
+            TOURNAMENT.enabled = true;
+            TOURNAMENT.phase = msg.phase || TOURNAMENT.phase;
+            TOURNAMENT.groups = msg.groups || TOURNAMENT.groups;
+            TOURNAMENT.bracket = msg.bracket || TOURNAMENT.bracket;
+            updateTournamentOverlay();
+            return;
+        }
+        if (msg.type === 'tournament_pause'){
+            TOURNAMENT.paused = true;
+            TOURNAMENT.pauseEndsAt = performance.now() + 15000;
+            showTournamentOverlay();
+            return;
+        }
+        if (msg.type === 'tournament_resume'){
+            TOURNAMENT.paused = false;
+            hideTournamentOverlay();
+            return;
+        }
+        if (msg.type === 'tournament_match_result'){
+            if (msg.bracket) TOURNAMENT.bracket = msg.bracket;
+            if (msg.groups)  TOURNAMENT.groups  = msg.groups;
+            updateTournamentOverlay();
+            addChatMessage('System', 'Match beendet, Turnier-Stand aktualisiert.', 'system');
+            return;
         }
     }
 
-    // ...existing code...
+    function netLocalInput(){
+        // Online: jeder Client steuert genau 1 Spieler (WASD + Space)
+        return {
+            up: !!Keys['KeyW'],
+            down: !!Keys['KeyS'],
+            left: !!Keys['KeyA'],
+            right: !!Keys['KeyD'],
+            boost: !!Keys['Space'],
+        };
+    }
 
+    function netStartSending(){
+        if (NET.sendTimer) clearInterval(NET.sendTimer);
+        NET.sendTimer = setInterval(() => {
+            if (mode !== 'online' || !NET.connected || NET.playerIndex === null) return; // Viewer sendet nichts
+            NET.seq++;
+            const input = netLocalInput();
+            wsSend({ type:'input', input:{...input, seq: NET.seq }});
+        }, 16);
+    }
+
+    function applyServerState(msg){
+         // Server nutzt dieselben Pixel-Koordinaten wie das Canvas.
+         if (!msg) return;
+         if (msg.score){
+             score = msg.score;
+             s1El.textContent = score[0];
+             s2El.textContent = score[1];
+         }
+         if (msg.ball){
+             ball.pos.x = msg.ball.x;
+             ball.pos.y = msg.ball.y;
+             ball.vel.x = msg.ball.vx || 0;
+             ball.vel.y = msg.ball.vy || 0;
+         }
+        // Namen vom Server übernehmen (Array)
+        if (msg.playerNames && typeof msg.playerNames === 'object'){
+            NET.playerNames = msg.playerNames;
+        }
+        // Lobby/Match status vom Server (optional)
+        NET.serverStarted = !!msg.started;
+        NET.serverCountdown = (typeof msg.countdown === 'number') ? msg.countdown : (msg.countdown === undefined ? undefined : Number(msg.countdown));
+         if (msg.car && Array.isArray(msg.car)){
+             // stelle sicher, dass lokale Anzeige genug Cars hat
+             if (cars.length < msg.car.length){
+                 const add = msg.car.length - cars.length;
+                 for (let k=0;k<add;k++){
+                     const idx = cars.length;
+                     const side = (idx % 2 === 0) ? 'left' : 'right';
+                     const controls = (idx===0) ? { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' }
+                                    : (idx===1) ? { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
+                                    : { up:null, down:null, left:null, right:null, boost:null };
+                     cars.push(new Car({
+                         x: canvas.width/2, y: canvas.height/2,
+                         color: (idx%2===0) ? getCss('--blue') : getCss('--red'),
+                         side,
+                         controls,
+                         isBot:false
+                     }));
+                 }
+             }
+             for (let i=0;i<msg.car.length && i<cars.length;i++){
+                 cars[i].pos.x = msg.car[i].x;
+                 cars[i].pos.y = msg.car[i].y;
+                 cars[i].vel.x = msg.car[i].vx || 0;
+                 cars[i].vel.y = msg.car[i].vy || 0;
+             }
+             if (Array.isArray(msg.energy)){
+                 for (let i=0;i<msg.energy.length && i<cars.length;i++){
+                     if (msg.energy[i] !== undefined) cars[i].energy = msg.energy[i];
+                 }
+             }
+         }
+     }
+
+
+    // ---------- Input ----------
+    const Keys = Object.create(null);
+    addEventListener('keydown', (e) => {
+        Keys[e.code] = true;
+        if (e.code === 'Escape') showMenu();
+        if (e.code === 'KeyR') reset(true);
+        if (e.code === 'Tab'){ e.preventDefault(); showTournamentOverlay(); }
+    });
+    addEventListener('keyup', (e) => {
+        Keys[e.code] = false;
+        if (e.code === 'Tab') hideTournamentOverlay();
+    });
+
+    // ---------- Math ----------
+    class Vec {
+        constructor(x=0,y=0){this.x=x;this.y=y;}
+        clone(){return new Vec(this.x,this.y)}
+        set(x,y){this.x=x;this.y=y; return this;}
+        add(v){this.x+=v.x; this.y+=v.y; return this;}
+        sub(v){this.x-=v.x; this.y-=v.y; return this;}
+        mul(s){this.x*=s; this.y*=s; return this;}
+        len(){return Math.hypot(this.x,this.y)}
+        norm(){const l=this.len()||1; this.x/=l; this.y/=l; return this;}
+        dot(v){return this.x*v.x + this.y*v.y}
+    }
+
+    const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+
+    // ---------- Entities ----------
+    class Car {
+        constructor({x,y,color,controls,isBot=false,side='left'}){
+            this.pos = new Vec(x,y);
+            this.vel = new Vec(0,0);
+            this.color = color;
+            this.controls = controls;
+            this.isBot = isBot;
+            this.side = side; // 'left' or 'right'
+            this.r = CFG.carR;
+            this.mass = CFG.carMass;
+            this.energy = 100;
+            this.trail = [];
+            this.ai = { mode:'', until:0, target:this.pos.clone(), lastDist: 9999, stall: 0, clearSide: 0 }; // Bot-Memory gegen "Zittern"
+        }
+
+        getMaxSpeed(isBoosting){
+            return CFG.carMaxSpeed * (isBoosting ? CFG.boostMaxMul : 1);
+        }
+
+        applyInputDir(dir, isBoosting, dt){
+            // dir should be normalized or zero
+            if (dir.len() > 1e-6) dir.norm();
+
+            const acc = CFG.carAcc * (isBoosting ? CFG.boostAccMul : 1);
+            this.vel.add(dir.mul(acc * dt));
+
+            // cap speed
+            const maxV = this.getMaxSpeed(isBoosting);
+            const sp = this.vel.len();
+            if (sp > maxV) this.vel.norm().mul(maxV);
+        }
+
+        inputHuman(dt){
+            const c = this.controls;
+            // NOTE: Spieler 1: A = links, D = rechts
+            const x = (Keys[c.right] ? 1 : 0) + (Keys[c.left] ? -1 : 0);
+            const y = (Keys[c.down] ? 1 : 0) + (Keys[c.up] ? -1 : 0);
+
+            let dir = new Vec(x,y);
+            // diagonale nicht schneller
+            if (dir.len() > 1) dir.norm();
+
+            const wantsBoost = !!Keys[c.boost];
+            const isBoosting = wantsBoost && this.energy > 0.1 && dir.len() > 0.01;
+
+            // energy
+            if (isBoosting) this.energy = Math.max(0, this.energy - CFG.boostDrain * dt);
+            else this.energy = Math.min(100, this.energy + CFG.boostRegen * dt);
+
+            this.applyInputDir(dir, isBoosting, dt);
+        }
+
+        inputBot(ball, dt){
+            // Bot v3.7 (soccer-ish defending):
+            // - MARK/SHADOW: zwischen Gegner/Ball und eigenem Tor stehen (Schussbahn schließen)
+            // - INTERCEPT: bei Schüssen Richtung eigenes Tor eine Abfang-Position nehmen
+            // - CHALLENGE nur wenn sinnvoll, sonst geduldig blocken (darf auch stehen bleiben)
+            // - DRIBBLE/ATTACK wenn Vorteil oder Ball frei
+
+            const now = performance.now();
+            const goalLeft  = new Vec(CFG.pad - CFG.goalDepth, canvas.height/2);
+            const goalRight = new Vec(canvas.width - (CFG.pad - CFG.goalDepth), canvas.height/2);
+
+            const ownGoal   = (this.side === 'right') ? goalRight : goalLeft;
+            const enemyGoal = (this.side === 'right') ? goalLeft  : goalRight;
+
+            // Find opponent und self by index (robust für variable car count)
+            let self, opponent;
+            for (let i=0;i<cars.length;i++){
+                if (cars[i] === this) { self = this; opponent = cars[(i+1)%cars.length]; break; }
+            }
+            if (!opponent) opponent = cars[cars.length-1]; // fallback
+
+            // Prediction
+            const pBall = ball.pos.clone().add(ball.vel.clone().mul(CFG.botPrediction));
+            const distBotBall = pBall.clone().sub(this.pos).len();
+            const distOppBall = pBall.clone().sub(opponent.pos).len();
+            const distBallOwnGoal = pBall.clone().sub(ownGoal).len();
+
+            const ballSpeed = ball.vel.len();
+            const inOwnHalf = (this.side === 'right') ? (pBall.x > canvas.width * 0.54) : (pBall.x < canvas.width * 0.46);
+            const velTowardOwn = (this.side === 'right') ? (ball.vel.x > 70) : (ball.vel.x < -70);
+
+            // Besitz/Pressure grob schätzen
+            const oppNearBall = distOppBall < 120;
+            const botNearBall = distBotBall < 120;
+            const oppPossess = oppNearBall && (distOppBall + 18 < distBotBall);
+            const botPossess = botNearBall && (distBotBall + 18 < distOppBall);
+
+            // Danger: nahe Tor oder Schuss Richtung Tor in eigener Hälfte
+            const danger = (distBallOwnGoal < 320) || (inOwnHalf && velTowardOwn && ballSpeed > 60);
+
+            // Safe: Gegner nicht direkt am Ball ODER Bot deutlich näher
+            const safeToTake = (distOppBall > 205) || (distBotBall + 50 < distOppBall);
+
+            // Richtungen
+            const center = new Vec(canvas.width/2, canvas.height/2);
+            const toCenter = center.clone().sub(pBall).norm();
+
+            const rawClearDir = pBall.clone().sub(ownGoal).norm();
+            // Clears leicht Richtung Mitte => weniger "komisches" seitliches Gezappel
+            const clearDir = rawClearDir.clone().mul(0.72).add(toCenter.clone().mul(0.28)).norm();
+            const attackDir = enemyGoal.clone().sub(pBall).norm();
+
+            const offset = this.r + ball.r + 16;
+
+            // -------- Commit Mode (gegen Flip-Flop) --------
+            if (!this.ai) this.ai = { mode:'', until:0, target:this.pos.clone(), lastDist: 9999, stall: 0, clearSide: 0 };
+
+            // DRIBBLE-Stall-Erkennung (gegen Weglaufen/Zittern): zählt Frames, in denen Distanz zum Ball größer wird
+            if (this.ai.lastDist === 9999) this.ai.lastDist = distBotBall;
+            if (distBotBall > this.ai.lastDist + 6) this.ai.stall = (this.ai.stall || 0) + 1;
+            else this.ai.stall = 0;
+            this.ai.lastDist = distBotBall;
+
+            if (now > this.ai.until){
+                let mode;
+
+                // Wenn sehr gefährlich: lieber blocken/klären statt fancy
+                if (danger){
+                    if (safeToTake || botNearBall) mode = 'CLEAR';
+                    else mode = (distBotBall < 165) ? 'CHALLENGE' : 'SHADOW';
+                } else {
+                    // Nicht gefährlich: wenn Gegner klar am Ball -> markieren, sonst Ball nehmen oder chasen
+                    if (oppPossess) mode = 'MARK';
+                    else {
+                        const advantage = (distBotBall + 55 < distOppBall) || (distOppBall > 235);
+                        mode = advantage ? 'DRIBBLE' : 'CHASE';
+                    }
+                }
+
+                this.ai.mode = mode;
+                // längere Commits für stabile Modi (CLEAR/DRIBBLE brauchen Zeit)
+                const commitTimes = {
+                    'SHADOW': 420,
+                    'MARK': 420,
+                    'CLEAR': 580,      // länger damit nicht ständig wechsel
+                    'DRIBBLE': 580,    // länger damit nicht ständig wechsel
+                    'CHALLENGE': 280,
+                    'CHASE': 200
+                };
+                this.ai.until = now + (commitTimes[mode] || 280);
+            }
+
+            let mode = this.ai.mode;
+
+            // Wenn DRIBBLE/CLEAR komisch wird (Bot läuft weg / zittert), dann kurz auf CHASE umschalten
+            if ((mode === 'DRIBBLE' || mode === 'CLEAR') && this.ai.stall > 16 && distBotBall > 220){
+                this.ai.mode = 'CHASE';
+                this.ai.until = now + 360;
+                this.ai.stall = 0;
+                mode = 'CHASE';
+            }
+
+            // -------- Intercept Point (wenn Ball Richtung eigenes Tor fliegt) --------
+            let interceptY = null;
+            if (velTowardOwn && Math.abs(ball.vel.x) > 35){
+                const goalLineX = (this.side === 'right') ? (canvas.width - CFG.pad + 6) : (CFG.pad - 6);
+                const dx = goalLineX - ball.pos.x;
+                const tHit = dx / (ball.vel.x || 1e-6);
+                if (tHit > 0 && tHit < 1.2){
+                    interceptY = ball.pos.y + ball.vel.y * tHit;
+                    interceptY = clamp(interceptY, CFG.pad + 40, canvas.height - CFG.pad - 40);
+                }
+            }
+
+            // -------- Desired Target --------
+            let desired;
+
+            if (mode === 'CLEAR'){
+                // Fix gegen "CLEAR-Zittern":
+                // Wenn der Bot vor dem Ball ist (zwischen Ball und Clear-Richtung), muss er seitlich "um den Ball herum".
+                // Sonst versucht er ständig den Behind-Point zu erreichen, stößt aber am Ball ab => hin und her.
+
+                if (!this.ai.clearSide) this.ai.clearSide = (pBall.y < canvas.height/2) ? 1 : -1; // 1 = unten vorbei, -1 = oben vorbei
+
+                const ballToBot = this.pos.clone().sub(pBall);
+                const frontness = ballToBot.dot(clearDir); // >0 = Bot ist vor dem Ball (schlecht zum Klären)
+
+                const perp = new Vec(-clearDir.y, clearDir.x);
+
+                if (frontness > 10){
+                    // Umpositionieren: erst seitlich um den Ball, dann hinter ihn
+                    const behind = pBall.clone().sub(clearDir.clone().mul(offset * 2.1));
+                    desired = behind.add(perp.mul(this.ai.clearSide * offset * 2.8));
+                } else {
+                    // Hinter/seitlich vom Ball: aktiv durchschieben
+                    if (distBotBall < 105) desired = pBall.clone().add(clearDir.clone().mul(offset * 3.6));
+                    else desired = pBall.clone().sub(clearDir.clone().mul(offset * 2.2));
+
+                    // sobald wir klar "hinter" dem Ball sind, Side resetten (damit er später neu wählen kann)
+                    if (frontness < -18) this.ai.clearSide = 0;
+                }
+
+            } else if (mode === 'CHALLENGE'){
+                this.ai.clearSide = 0;
+                // Direkt rein, aber nicht bis ins Tor "hineinschieben": leicht weg vom Tor anfahren
+                desired = pBall.clone().add(clearDir.clone().mul(36));
+
+            } else if (mode === 'DRIBBLE'){
+                // Hinter den Ball + wall-aware angle
+                let behind = pBall.clone().sub(attackDir.clone().mul(offset * 2.1));
+
+                const nearRight = pBall.x > canvas.width - CFG.pad - 34;
+                const nearLeft  = pBall.x < CFG.pad + 34;
+                const nearTop   = pBall.y < CFG.pad + 34;
+                const nearBot   = pBall.y > canvas.height - CFG.pad - 34;
+
+                if (this.side === 'right' && nearRight){
+                    const sign = (pBall.y < canvas.height/2) ? 1 : -1;
+                    behind = pBall.clone().add(new Vec(-offset * 1.3, sign * offset * 2.2));
+                }
+                if (this.side === 'left' && nearLeft){
+                    const sign = (pBall.y < canvas.height/2) ? 1 : -1;
+                    behind = pBall.clone().add(new Vec( offset * 1.3, sign * offset * 2.2));
+                }
+                if (nearTop) behind.y = pBall.y + offset * 2.0;
+                if (nearBot) behind.y = pBall.y - offset * 2.0;
+
+                const behindDist = behind.clone().sub(this.pos).len();
+                // Wenn "behind" viel weiter weg ist als der Ball selbst, dann lieber direkt zum Ball (sonst läuft er weg)
+                if (behindDist > distBotBall + 110) desired = pBall.clone();
+                else if (distBotBall < 110) desired = pBall.clone().add(attackDir.clone().mul(135));
+                else if (behindDist < 60) desired = pBall.clone().add(attackDir.clone().mul(100));
+                else desired = behind;
+
+                // Wenn Ball in eigener Ecke klebt: zur Mitte ziehen
+                if (inOwnHalf && (nearTop || nearBot)) desired.y = canvas.height/2;
+
+            } else if (mode === 'MARK'){
+                // Fußball-like: Gegner begleiten, Schussbahn schließen, Chance zum Abnehmen nutzen
+                const threat = opponent.pos.clone();
+                const blockDir = threat.clone().sub(ownGoal).norm();
+                const blockDist = danger ? 280 : 380;
+                desired = ownGoal.clone().add(blockDir.mul(blockDist));
+
+                // etwas zur Ballseite ziehen, um Pässe/Dribbling abzufangen
+                desired.x += (pBall.x - desired.x) * 0.1;
+                desired.y += (pBall.y - desired.y) * 0.14;
+
+                if (interceptY !== null) desired.y = interceptY;
+
+                // Wenn Ball wirklich frei und nah => abnehmen
+                if (safeToTake && distBotBall < 165) desired = pBall.clone();
+
+            } else { // SHADOW / CHASE
+                if (danger){
+                    // SHADOW: zwischen Ball und eigenem Tor, sehr schwer zu schießen
+                    const blockDir = pBall.clone().sub(ownGoal).norm();
+                    const blockDist = 190;
+                    desired = ownGoal.clone().add(blockDir.mul(blockDist));
+                    if (interceptY !== null) desired.y = interceptY;
+
+                    // Wenn es plötzlich safe wird: abnehmen
+                    if (safeToTake && distBotBall < 170) desired = pBall.clone();
+                } else {
+                    // CHASE: aktiv zum Ball
+                    desired = pBall.clone();
+                }
+            }
+
+            // Grenzen
+            desired.y = clamp(desired.y, CFG.pad + 45, canvas.height - CFG.pad - 45);
+
+            // -------- Target Smoothing: reduzieren für CLEAR/DRIBBLE (kein über-smoothing) --------
+            const slowSmooth = (mode === 'CLEAR' || mode === 'DRIBBLE');
+            const alpha = slowSmooth ? (1 - Math.exp(-4 * dt)) : (1 - Math.exp(-10 * dt));  // langsameres smoothing für stabile modes
+            this.ai.target.x += (desired.x - this.ai.target.x) * alpha;
+            this.ai.target.y += (desired.y - this.ai.target.y) * alpha;
+
+            let dir = this.ai.target.clone().sub(this.pos);
+            const dist = dir.len();
+
+            // "Darf stehen bleiben": wenn Ziel erreicht und wir blocken/marken, dann keine Mikro-Bewegung
+            const patient = (mode === 'SHADOW' || mode === 'MARK');
+            if (patient && dist < 18 && this.vel.len() < 55){
+                dir.set(0,0);
+                // etwas schneller regenerieren wenn er wirklich wartet
+                this.energy = Math.min(100, this.energy + (CFG.boostRegen * 0.65) * dt);
+            } else {
+                if (dist > 1) dir.mul(1 / dist);
+            }
+
+            // Boost nur, wenn es Sinn macht (nicht beim Blocken)
+            const canBoost = (mode !== 'SHADOW' && mode !== 'MARK');
+            const emergency = danger && (distOppBall + 40 < distBotBall) && dist > 115;
+            const wantsBoost = canBoost && (this.energy > 18) && ((dist > CFG.botBoostDist) || emergency);
+            const isBoosting = wantsBoost && dir.len() > 0.01;
+
+            if (isBoosting) this.energy = Math.max(0, this.energy - CFG.boostDrain * dt);
+            else this.energy = Math.min(100, this.energy + CFG.boostRegen * dt);
+
+            this.applyInputDir(dir, isBoosting, dt);
+        }
+
+        integrate(dt){
+            // linear drag
+            this.vel.mul(Math.exp(-CFG.carDrag * dt));
+            this.pos.add(this.vel.clone().mul(dt));
+
+            // keep in field bounds (cars dürfen auch in die Tore reinfahren)
+            const p = CFG.pad;
+            const cy = canvas.height/2;
+            const halfG = CFG.goalWidth/2;
+            const inGoalMouth = Math.abs(this.pos.y - cy) < halfG;
+
+            const minX = inGoalMouth ? (p - CFG.goalDepth) : p;
+            const maxX = inGoalMouth ? (canvas.width - (p - CFG.goalDepth)) : (canvas.width - p);
+
+            this.pos.x = clamp(this.pos.x, minX, maxX);
+            this.pos.y = clamp(this.pos.y, p, canvas.height - p);
+
+            // trail
+            this.trail.push({x:this.pos.x, y:this.pos.y, a: clamp(this.vel.len()/this.getMaxSpeed(false),0,1)});
+            if (this.trail.length > 14) this.trail.shift();
+        }
+
+        draw(){
+            // trail
+            for (let i=0;i<this.trail.length;i++){
+                const t = this.trail[i];
+                const k = i / this.trail.length;
+                ctx.globalAlpha = 0.08 * k * (0.3 + t.a);
+                ctx.beginPath();
+                ctx.arc(t.x, t.y, this.r * (0.55 + 0.25*k), 0, Math.PI*2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+
+            // body
+            ctx.save();
+            ctx.translate(this.pos.x, this.pos.y);
+
+            // shadow
+            ctx.globalAlpha = 0.22;
+            ctx.beginPath();
+            ctx.ellipse(0, this.r*0.75, this.r*1.05, this.r*0.55, 0, 0, Math.PI*2);
+            ctx.fillStyle = '#000';
+            ctx.fill();
+            ctx.globalAlpha = 1;
+
+            // car circle base
+            ctx.beginPath();
+            ctx.arc(0,0,this.r,0,Math.PI*2);
+            ctx.fillStyle = this.color;
+            ctx.fill();
+
+            // front hint (direction by velocity)
+            const v = this.vel.clone();
+            if (v.len() > 5) v.norm();
+            ctx.beginPath();
+            ctx.arc(v.x*this.r*0.65, v.y*this.r*0.65, this.r*0.35, 0, Math.PI*2);
+            ctx.fillStyle = 'rgba(2,6,23,.55)';
+            ctx.fill();
+
+            // boost bar
+            const w = 34, h = 6;
+            ctx.translate(0, -this.r - 14);
+            ctx.globalAlpha = 0.9;
+            ctx.fillStyle = 'rgba(2,6,23,.6)';
+            roundRect(ctx, -w/2, -h/2, w, h, 4); ctx.fill();
+            ctx.fillStyle = 'rgba(34,197,94,.95)';
+            roundRect(ctx, -w/2, -h/2, w*(this.energy/100), h, 4); ctx.fill();
+            ctx.globalAlpha = 1;
+
+            ctx.restore();
+        }
+    }
+
+    class Ball {
+        constructor(x,y){
+            this.pos = new Vec(x,y);
+            this.vel = new Vec(0,0);
+            this.r = CFG.ballR;
+            this.mass = CFG.ballMass;
+        }
+
+        integrate(dt){
+            this.vel.mul(Math.exp(-CFG.ballDrag * dt));
+            this.pos.add(this.vel.clone().mul(dt));
+
+            // walls with goal openings
+            const p = CFG.pad;
+            const cy = canvas.height/2;
+            const halfG = CFG.goalWidth/2;
+            const inGoalMouth = Math.abs(this.pos.y - cy) < halfG;
+
+            // top/bottom
+            if (this.pos.y - this.r < p){ this.pos.y = p + this.r; this.vel.y *= -CFG.wallRestitution; }
+            if (this.pos.y + this.r > canvas.height - p){ this.pos.y = canvas.height - p - this.r; this.vel.y *= -CFG.wallRestitution; }
+
+            // left/right (bounce unless within goal opening)
+            if (!inGoalMouth){
+                if (this.pos.x - this.r < p){ this.pos.x = p + this.r; this.vel.x *= -CFG.wallRestitution; }
+                if (this.pos.x + this.r > canvas.width - p){ this.pos.x = canvas.width - p - this.r; this.vel.x *= -CFG.wallRestitution; }
+            }
+        }
+
+        draw(){
+            // glow
+            ctx.globalAlpha = 0.22;
+            ctx.beginPath();
+            ctx.arc(this.pos.x, this.pos.y, this.r*2.2, 0, Math.PI*2);
+            ctx.fillStyle = '#f59e0b';
+            ctx.fill();
+            ctx.globalAlpha = 1;
+
+            // ball
+            ctx.beginPath();
+            ctx.arc(this.pos.x, this.pos.y, this.r, 0, Math.PI*2);
+            ctx.fillStyle = getCss('--ball');
+            ctx.fill();
+
+            // small highlight
+            ctx.globalAlpha = 0.55;
+            ctx.beginPath();
+            ctx.arc(this.pos.x - this.r*0.25, this.pos.y - this.r*0.35, this.r*0.35, 0, Math.PI*2);
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        }
+    }
+
+    function getCss(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+    function botModeLabel(mode){
+        switch(mode){
+            case 'CLEAR': return 'CLEAR (Klären)';
+            case 'CHALLENGE': return 'CHALLENGE (Attackieren)';
+            case 'SHADOW': return 'SHADOW (Abschirmen)';
+            case 'MARK': return 'MARK (Markieren)';
+            case 'INTERCEPT': return 'INTERCEPT (Abfangen)';
+            case 'DRIBBLE': return 'DRIBBLE (Dribbeln)';
+            case 'CHASE': return 'CHASE (Jagen)';
+            default: return mode || '';
+        }
+    }
+
+    function roundRect(c,x,y,w,h,r){
+        c.beginPath();
+        c.moveTo(x+r,y);
+        c.arcTo(x+w,y,x+w,y+h,r);
+        c.arcTo(x+w,y+h,x,y+h,r);
+        c.arcTo(x,y+h,x,y,r);
+        c.arcTo(x,y,x+w,y,r);
+        c.closePath();
+    }
+
+    // ---------- Physics: collisions ----------
+    function resolveCircleCollision(a, b, restitution){
+        const n = b.pos.clone().sub(a.pos);
+        const dist = n.len();
+        const minDist = a.r + b.r;
+        if (dist <= 0 || dist >= minDist) return;
+
+        const normal = n.mul(1 / dist); // normalize
+        const penetration = minDist - dist;
+
+        // positional correction (split)
+        const totalMass = a.mass + b.mass;
+        const aMove = penetration * (b.mass / totalMass);
+        const bMove = penetration * (a.mass / totalMass);
+        a.pos.add(normal.clone().mul(-aMove));
+        b.pos.add(normal.clone().mul(bMove));
+
+        // relative velocity
+        const rv = b.vel.clone().sub(a.vel);
+        const velAlongNormal = rv.dot(normal);
+        if (velAlongNormal > 0) return; // separating
+
+        const e = restitution;
+        const j = -(1 + e) * velAlongNormal / (1 / a.mass + 1 / b.mass);
+        const impulse = normal.clone().mul(j);
+        a.vel.add(impulse.clone().mul(-1 / a.mass));
+        b.vel.add(impulse.clone().mul( 1 / b.mass));
+
+        // extra kick for fun when cars hit the ball hard
+        const hardHit = Math.abs(velAlongNormal);
+        if ((a instanceof Car && b instanceof Ball) || (b instanceof Car && a instanceof Ball)){
+            if (hardHit > 115){
+                const ball = (a instanceof Ball) ? a : b;
+                const car = (a instanceof Car) ? a : b;
+                ball.vel.add(normal.clone().mul(CFG.kickImpulse * (car.vel.len()/CFG.carMaxSpeed)));
+            }
+        }
+    }
+
+    // ---------- Game State ----------
+    let mode = 'pvp';
+    let cars = [];
+    let ball;
+    let score = [0,0];
+    let running = false;
+    let lastT = 0;
+
+    // local countdown state (für local games)
+    let localCountdown = 0;           // Sekunden verbleibend (float)
+    let localCountdownActive = false; // true solange Countdown läuft
+
+    function kickoff(){
+        ball.pos.set(canvas.width/2, canvas.height/2);
+        ball.vel.set((Math.random()*2-1)*120, (Math.random()*2-1)*70);
+
+        cars[0].pos.set(200, canvas.height/2);
+        cars[0].vel.set(0,0);
+        cars[0].energy = 100;
+
+        cars[1].pos.set(canvas.width-200, canvas.height/2);
+        cars[1].vel.set(0,0);
+        cars[1].energy = 100;
+    }
+
+    function reset(keepScore=false, playersCount=2){
+        cars = [];
+        for (let i=0;i<playersCount;i++){
+            const side = (i % 2 === 0) ? 'left' : 'right';
+            const x = (side === 'left') ? 200 : canvas.width - 200;
+            const y = (playersCount === 2) ? (canvas.height/2) : (canvas.height/2 + ((i < playersCount/2) ? -40 : 40));
+            const controls = (i === 0) ? { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' }
+                            : (i === 1) ? { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
+                            : { up:null, down:null, left:null, right:null, boost:null };
+            // Nutze Preferences-Farben statt Defaults
+            const color = (side === 'left') ? PREFS.teamColors.left : PREFS.teamColors.right;
+            cars.push(new Car({
+                x, y,
+                color,
+                side,
+                controls,
+                isBot: (mode==='pve' && i===1) ? true : false
+            }));
+        }
+        ball = new Ball(canvas.width/2, canvas.height/2);
+        if (!keepScore) score = [0,0];
+        s1El.textContent = score[0];
+        s2El.textContent = score[1];
+        kickoff();
+    }
+
+    function showMenu(){
+        running = false;
+        if (mode==='online') netDisconnect();
+        ui.style.display = 'grid';
+        hud.hidden = true;
+        // Hide all option panels, show only main choice
+        const lo = document.getElementById('localOptions');
+        const on = document.getElementById('onlineOptions');
+        if (lo) lo.style.display = 'none';
+        if (on) on.style.display = 'none';
+        // Settings-Button zusammen mit den Panels ausblenden
+        updateSettingsVisibility();
+        updateChatVisibility();
+        hideTournamentOverlay();
+        // Sicherstellen, dass Preferences-Overlay keine Klicks blockiert
+        document.body.classList.remove('prefs-open');
+        document.getElementById('prefsModal')?.classList.remove('visible');
+    }
+
+
+    function startOnline(){
+         // Online: wir starten das Rendering, State kommt vom Server
+         // vor dem Start Settings-Panel schließen
+         document.getElementById('settingsPanel')?.classList.remove('visible');
+         ui.style.display = 'none';
+         hud.hidden = false;
+         // lokale Anzeige mit erwarteter Anzahl (2 oder 4)
+         reset(false, expectedPlayers);
+         // kein Bot im Online-Modus (alle echten Spieler)
+         cars.forEach(c => { if (c) c.isBot = false; });
+         // Input senden
+         NET.role = (NET.playerIndex === null) ? 'viewer' : 'player';
+         netStartSending();
+         running = true;
+         lastT = performance.now();
+         requestAnimationFrame(loop);
+         updateChatVisibility();
+         TOURNAMENT.paused = false;
+         hideTournamentOverlay();
+    }
+
+    function start(){
+        // bei lokalem Start ebenfalls Settings-Panel schließen
+        document.getElementById('settingsPanel')?.classList.remove('visible');
+        ui.style.display = 'none';
+        hud.hidden = false;
+        // Standardwerte wiederherstellen, falls Online-Overrides gesetzt wurden
+        Object.assign(CFG, CFG_DEFAULT);
+        reset(false);
+        // Wende Preferences an (Farben + Steuerung)
+        applyColorsToGame();
+        applyControlsToGame();
+        // ensure any local countdown stops on fresh start
+        localCountdownActive = false;
+        localCountdown = 0;
+        running = true;
+        lastT = performance.now();
+        requestAnimationFrame(loop);
+        updateChatVisibility();
+    }
+
+    function checkGoals(){
+        const cy = canvas.height/2;
+        const halfG = CFG.goalWidth/2;
+
+        // left goal: ball must cross beyond left goal depth while inside mouth
+        const leftGoalLine = CFG.pad - CFG.goalDepth;
+        if (ball.pos.x + ball.r < leftGoalLine && Math.abs(ball.pos.y - cy) < halfG){
+            score[1]++;
+            s2El.textContent = score[1];
+            // local: start short countdown before kickoff (reduced to 1.5s)
+            if (mode !== 'online'){
+                localCountdown = 1.5;
+                localCountdownActive = true;
+            }
+            return;
+        }
+
+        // right goal
+        const rightGoalLine = canvas.width - (CFG.pad - CFG.goalDepth);
+        if (ball.pos.x - ball.r > rightGoalLine && Math.abs(ball.pos.y - cy) < halfG){
+            score[0]++;
+            s1El.textContent = score[0];
+            if (mode !== 'online'){
+                localCountdown = 1.5;
+                localCountdownActive = true;
+            }
+            return;
+        }
+    }
+
+    // ---------- Rendering ----------
+    function drawField(){
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+
+        // vignette
+        ctx.globalAlpha = 0.22;
+        ctx.beginPath();
+        ctx.ellipse(canvas.width/2, canvas.height/2, canvas.width*0.56, canvas.height*0.64, 0, 0, Math.PI*2);
+        ctx.fillStyle = '#000';
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        // borders
+        ctx.strokeStyle = getCss('--line');
+        ctx.lineWidth = 2;
+        ctx.strokeRect(CFG.pad, CFG.pad, canvas.width-2*CFG.pad, canvas.height-2*CFG.pad);
+
+        // midfield line
+        ctx.globalAlpha = 0.65;
+        ctx.beginPath();
+        ctx.moveTo(canvas.width/2, CFG.pad);
+        ctx.lineTo(canvas.width/2, canvas.height-CFG.pad);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+
+        // center circle
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath();
+        ctx.arc(canvas.width/2, canvas.height/2, CFG.centerCircle, 0, Math.PI*2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+
+        // goals
+        const cy = canvas.height/2;
+        ctx.globalAlpha = 0.95;
+        ctx.fillStyle = getCss('--blue');
+        ctx.fillRect(0, cy-CFG.goalWidth/2, CFG.pad-3, CFG.goalWidth);
+        ctx.fillStyle = getCss('--red');
+        ctx.fillRect(canvas.width-(CFG.pad-3), cy-CFG.goalWidth/2, CFG.pad-3, CFG.goalWidth);
+        ctx.globalAlpha = 1;
+
+        // goal depth markers
+        ctx.globalAlpha = 0.25;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(CFG.pad-CFG.goalDepth, cy-CFG.goalWidth/2, 2, CFG.goalWidth);
+        ctx.fillRect(canvas.width-(CFG.pad-CFG.goalDepth), cy-CFG.goalWidth/2, 2, CFG.goalWidth);
+        ctx.globalAlpha = 1;
+    }
+
+    // ---------- Loop ----------
+    function step(dt){
+        if (mode === 'online'){
+            // Server-authoritative: nur State anwenden, keine lokale Physik/Goals
+            if (NET.lastState) applyServerState(NET.lastState);
+            return;
+        }
+
+        // Local countdown active -> pause physics until it runs out
+        if (localCountdownActive){
+            // inputs are ignored during countdown
+            return;
+        }
+
+        // input
+        cars[0].inputHuman(dt);
+        if (cars[1].isBot) cars[1].inputBot(ball, dt);
+        else cars[1].inputHuman(dt);
+
+        // integrate
+        cars.forEach(c => c.integrate(dt));
+        ball.integrate(dt);
+
+        // collisions
+        // car-car
+        resolveCircleCollision(cars[0], cars[1], 0.35);
+        // car-ball
+        resolveCircleCollision(cars[0], ball, CFG.restitution);
+        resolveCircleCollision(cars[1], ball, CFG.restitution);
+
+        checkGoals();
+    }
+
+    function loop(t){
+         if (!running) return;
+         const dt = clamp((t - lastT) / 1000, 0, 1/30);
+         lastT = t;
+
+         if (TOURNAMENT.paused){
+             showTournamentOverlay();
+             // Eingaben in Pause ignorieren (lokal); Online-State wird trotzdem gezeigt
+             if (mode !== 'online'){ requestAnimationFrame(loop); return; }
+         }
+
+         // If local countdown active, decrement timer here
+         if (localCountdownActive){
+             localCountdown -= dt;
+             if (localCountdown <= 0){
+                 localCountdownActive = false;
+                 localCountdown = 0;
+                 kickoff();
+             }
+         }
+
+         step(dt);
+
+         drawField();
+         ball.draw();
+         cars.forEach(c => c.draw());
+
+         // Namen anzeigen (lokal oder online)
+         if (mode === 'online'){
+             cars.forEach((car, idx) => {
+                 const name = NET.playerNames[idx] || ('Spieler ' + (idx+1));
+                 ctx.save();
+                 ctx.globalAlpha = 0.95;
+                 ctx.fillStyle = car.color;
+                 ctx.font = 'bold 13px system-ui';
+                 ctx.textAlign = 'center';
+                 ctx.fillText(name, car.pos.x, car.pos.y - car.r - 28);
+                 ctx.globalAlpha = 1;
+                 ctx.restore();
+             });
+         }
+
+         // Bot-Status im HUD anzeigen
+         if (botStateEl){
+             if (cars[1] && cars[1].isBot){
+                 const m = cars[1].ai?.mode || '';
+                 const e = Math.round(cars[1].energy);
+                 botStateEl.textContent = `Bot: ${botModeLabel(m)} · Energy: ${e}% · commit: ${(cars[1].ai.until.toFixed(3)-lastT.toFixed(3)).toFixed(1)}s`;
+             } else {
+                 botStateEl.textContent = '';
+             }
+         }
+
+         // Countdown Overlay aktualisieren
+         if (localCountdownActive){
+             // Lokales Spiel: lokale Countdown
+             updateCountdownRing(localCountdown);
+             showCountdown(localCountdown, 1.5, 'Weiter in');
+         } else if (mode === 'online' && NET.countdownStartAt !== null){
+             // Online Spiel: Client zählt runter basierend auf elapsed time
+             const elapsed = (performance.now() - NET.countdownStartAt) / 1000;
+             const remaining = Math.max(0, 3 - elapsed);
+             if (remaining > 0){
+                 updateCountdownRing(remaining);
+                 showCountdown(remaining, 3, 'Spiel startet in');
+             } else {
+                 // Countdown vorbei
+                 hideCountdown();
+                 NET.countdownStartAt = null;
+             }
+         } else {
+             // Kein Countdown aktiv
+             hideCountdown();
+         }
+
+         requestAnimationFrame(loop);
+    }
+
+
+
+    // Falls die Countdown-Helfer noch nicht definiert sind, definiere sie hier defensiv.
+    if (typeof window.showCountdown !== 'function'){
+        window.showCountdown = function(seconds, total=3, label=''){
+            const overlay = document.getElementById('countdownOverlay');
+            const ring = document.getElementById('countdownRing');
+            const inner = document.getElementById('countdownInner');
+            const lbl = document.getElementById('countdownLabel');
+            if (!overlay || !ring || !inner) return;
+            if (lbl && label) lbl.textContent = label;
+            const clamped = Math.max(0, seconds);
+            inner.textContent = Math.ceil(clamped);
+            window.updateCountdownRing(clamped, total);
+            overlay.classList.add('visible');
+        };
+    }
+    if (typeof window.hideCountdown !== 'function'){
+        window.hideCountdown = function(){
+            const overlay = document.getElementById('countdownOverlay');
+            if (overlay) overlay.classList.remove('visible');
+        };
+    }
+    if (typeof window.updateCountdownRing !== 'function'){
+        window.updateCountdownRing = function(seconds, total=3){
+            const ring = document.getElementById('countdownRing');
+            const inner = document.getElementById('countdownInner');
+            if (!ring || !inner) return;
+            const clamped = Math.max(0, Math.min(total, seconds));
+            const pct = 1 - clamped/total;
+            const deg = Math.max(0, Math.min(360, pct*360));
+            ring.style.background = `conic-gradient(${getCss('--blue')} ${deg}deg, rgba(255,255,255,0.06) ${deg}deg)`;
+            inner.textContent = Math.ceil(clamped);
+        };
+    }
+
+    // ---------- UI: Init zweistufige Auswahl ----------
+    function initUI(){
+         if (UI_INITIALIZED) return;
+         UI_INITIALIZED = true;
+         const show = id => { const e = document.getElementById(id); if (e) e.style.display = ''; updateSettingsVisibility(); };
+         const hide = id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; updateSettingsVisibility(); };
+
+         // Hauptwahl sichtbar, Panels versteckt (sicherstellen)
+         hide('localOptions'); hide('onlineOptions');
+
+         // Choice buttons
+         const bLocal = document.getElementById('btnLocalChoice');
+         const bOnline = document.getElementById('btnOnlineChoice');
+         if (bLocal) bLocal.addEventListener('click', () => { show('localOptions'); hide('onlineOptions'); });
+         if (bOnline) bOnline.addEventListener('click', () => { show('onlineOptions'); hide('localOptions'); });
+
+         // Local action buttons
+         const pvp = document.getElementById('pvp');
+         const pve = document.getElementById('pve');
+         if (pvp) pvp.addEventListener('click', () => { mode = 'pvp'; start(); });
+         if (pve) pve.addEventListener('click', () => { mode = 'pve'; start(); });
+
+         // Online Host / Join
+         const onHost = document.getElementById('onHost');
+         if (onHost) onHost.addEventListener('click', async () => {
+            try{
+                NET.pendingAction = 'host';
+                const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
+                await netConnect();
+                const maxP = parseInt(document.getElementById('onVariant')?.value || '2', 10) || 2;
+                expectedPlayers = maxP;
+                wsSend({ type:'create_game_room', maxPlayers: maxP, playerName, settings: getCurrentSettings() });
+                netSetStatus('Relay: Raum wird vorbereitet…');
+            }catch(e){ console.warn(e); }
+         });
+
+         const onJoin = document.getElementById('onJoin');
+         if (onJoin) onJoin.addEventListener('click', async () => {
+            const code = (document.getElementById('onCode')?.value || '').trim().toUpperCase();
+            if (!code){ netSetStatus('Code fehlt'); return; }
+            try{
+                NET.pendingAction = 'join';
+                const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
+                expectedPlayers = parseInt(document.getElementById('onVariant')?.value || '2',10) || 2;
+                await netConnect();
+                wsSend({ type:'join_game_room', code, playerName });
+                netSetStatus('Relay: Raum wird gesucht…');
+            }catch(e){ console.warn(e); }
+         });
+
+         // initial einmal prüfen
+         updateSettingsVisibility();
+     }
+
+    // create_room/join_room Send bei relay:assigned
+    (function wireGameRoomRequests(){
+        const sendCreate = () => {
+            const maxP = expectedPlayers || 2;
+            const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
+            wsSend({ type:'create_room', maxPlayers: maxP, playerName, settings: getCurrentSettings() });
+        };
+        const sendJoin = () => {
+            const code = (document.getElementById('onCode')?.value || '').trim().toUpperCase();
+            const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
+            if (!code) return;
+            wsSend({ type:'join_room', code, playerName });
+        };
+        document.addEventListener('relay:assigned', (e) => {
+            const kind = e.detail?.kind;
+            if (kind === 'host') sendCreate();
+            if (kind === 'join') sendJoin();
+        });
+    })();
+
+    // =============================
+    //  Preferences System (lokal, keine Server-Änderungen)
+    // =============================
+
+    const PREFS = {
+        teamColors: {
+            left: '#60a5fa',   // blau
+            right: '#f87171'   // rot
+        },
+        controls: {
+            player1: { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' },
+            player2: { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
+        }
+    };
+
+    // Verfügbare Farben (Name, HexValue)
+    const AVAILABLE_COLORS = [
+        { name: 'Blau', hex: '#60a5fa' },
+        { name: 'Rot', hex: '#f87171' },
+        { name: 'Grün', hex: '#22c55e' },
+        { name: 'Gelb', hex: '#eab308' },
+        { name: 'Lila', hex: '#a855f7' },
+    ];
+
+    const CONTROL_KEYS = {
+        player1: ['up', 'down', 'left', 'right', 'boost'],
+        player2: ['up', 'down', 'left', 'right', 'boost']
+    };
+
+    const KEY_NAMES = {
+        'up': 'Hoch',
+        'down': 'Runter',
+        'left': 'Links',
+        'right': 'Rechts',
+        'boost': 'Boost'
+    };
+
+    // Lade Preferences aus localStorage
+    function loadPrefs(){
+        try{
+            const saved = localStorage.getItem('carArenaPrefs');
+            if (saved){
+                const parsed = JSON.parse(saved);
+                Object.assign(PREFS.teamColors, parsed.teamColors || {});
+                Object.assign(PREFS.controls.player1, parsed.controls?.player1 || {});
+                Object.assign(PREFS.controls.player2, parsed.controls?.player2 || {});
+            }
+        }catch(e){ console.error('Failed to load prefs', e); }
+    }
+
+    // Speichere Preferences in localStorage
+    function savePrefs(){
+        try{
+            localStorage.setItem('carArenaPrefs', JSON.stringify(PREFS));
+        }catch(e){ console.error('Failed to save prefs', e); }
+    }
+
+    // Aktualisiere lokal die Kontrollen der Cars (beim Laden oder Ändern)
+    function applyControlsToGame(){
+        if (cars.length > 0 && cars[0]){
+            cars[0].controls = { ...PREFS.controls.player1 };
+        }
+        if (cars.length > 1 && cars[1]){
+            cars[1].controls = { ...PREFS.controls.player2 };
+        }
+    }
+
+    // Aktualisiere lokal die Farben der Cars (beim Laden oder Ändern)
+    function applyColorsToGame(){
+        if (cars.length > 0 && cars[0]){
+            cars[0].color = PREFS.teamColors.left;
+        }
+        if (cars.length > 1 && cars[1]){
+            cars[1].color = PREFS.teamColors.right;
+        }
+    }
+
+    // UI für Preferences Modal
+    function renderPrefsModal(){
+        // Team Colors
+        const teamColorsContainer = document.getElementById('teamColorsContainer');
+        if (teamColorsContainer){
+            teamColorsContainer.innerHTML = '';
+            ['left', 'right'].forEach(side => {
+                const teamName = side === 'left' ? 'Team Blau' : 'Team Rot';
+                const block = document.createElement('div');
+                block.className = 'team-color-block';
+                block.innerHTML = `<h5>${teamName}</h5>`;
+
+                const colorPicker = document.createElement('div');
+                colorPicker.className = 'color-picker';
+
+                AVAILABLE_COLORS.forEach(col => {
+                    const option = document.createElement('div');
+                    option.className = 'color-option';
+                    option.style.background = col.hex;
+                    option.title = col.name;
+                    if (PREFS.teamColors[side] === col.hex) option.classList.add('selected');
+
+                    option.addEventListener('click', () => {
+                        // Prüfe: darf diese Farbe sein? (nicht schon vom anderen Team)
+                        const otherSide = side === 'left' ? 'right' : 'left';
+                        if (PREFS.teamColors[otherSide] === col.hex){
+                            alert('Diese Farbe wird schon vom anderen Team benutzt!');
+                            return;
+                        }
+                        PREFS.teamColors[side] = col.hex;
+                        renderPrefsModal(); // Refresh UI
+                    });
+
+                    colorPicker.appendChild(option);
+                });
+
+                block.appendChild(colorPicker);
+                teamColorsContainer.appendChild(block);
+            });
+        }
+
+        // Controls Player 1
+        const controlsPlayer1 = document.getElementById('controlsPlayer1Container');
+        if (controlsPlayer1){
+            controlsPlayer1.innerHTML = '';
+            CONTROL_KEYS.player1.forEach(action => {
+                const row = document.createElement('div');
+                row.className = 'key-input-row';
+                row.innerHTML = `
+                    <label>${KEY_NAMES[action]}</label>
+                    <input type="text" class="key-input" data-player="player1" data-action="${action}"
+                           value="${getKeyName(PREFS.controls.player1[action])}" readonly>
+                `;
+                controlsPlayer1.appendChild(row);
+
+                const input = row.querySelector('input');
+                input.addEventListener('click', () => recordKey(input, 'player1', action));
+            });
+        }
+
+        // Controls Player 2
+        const controlsPlayer2 = document.getElementById('controlsPlayer2Container');
+        if (controlsPlayer2){
+            controlsPlayer2.innerHTML = '';
+            CONTROL_KEYS.player2.forEach(action => {
+                const row = document.createElement('div');
+                row.className = 'key-input-row';
+                row.innerHTML = `
+                    <label>${KEY_NAMES[action]}</label>
+                    <input type="text" class="key-input" data-player="player2" data-action="${action}"
+                           value="${getKeyName(PREFS.controls.player2[action])}" readonly>
+                `;
+                controlsPlayer2.appendChild(row);
+
+                const input = row.querySelector('input');
+                input.addEventListener('click', () => recordKey(input, 'player2', action));
+            });
+        }
+    }
+
+    // Konvertiere KeyCode zu lesbarem Namen
+    function getKeyName(code){
+        const names = {
+            'KeyW': 'W', 'KeyA': 'A', 'KeyS': 'S', 'KeyD': 'D',
+            'KeyZ': 'Z', 'KeyX': 'X', 'KeyC': 'C', 'KeyV': 'V',
+            'ArrowUp': '↑', 'ArrowDown': '↓', 'ArrowLeft': '←', 'ArrowRight': '→',
+            'Space': 'Space', 'ShiftLeft': 'Shift', 'ShiftRight': 'Shift',
+            'ControlLeft': 'Ctrl', 'ControlRight': 'Ctrl',
+            'AltLeft': 'Alt', 'AltRight': 'Alt',
+            'Tab': 'Tab', 'Enter': 'Enter'
+        };
+        return names[code] || code;
+    }
+
+    // Warte auf Tastendruck und speichere den Code
+    function recordKey(inputEl, player, action){
+        inputEl.classList.add('recording');
+        inputEl.value = 'Taste drücken...';
+        inputEl.disabled = true;
+
+        const handler = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const code = e.code;
+            PREFS.controls[player][action] = code;
+            inputEl.value = getKeyName(code);
+            inputEl.classList.remove('recording');
+            inputEl.disabled = false;
+
+            document.removeEventListener('keydown', handler);
+        };
+
+        document.addEventListener('keydown', handler);
+    }
+
+    // Lade Preferences beim Start (FRÜH, vor erste Nutzung)
+    loadPrefs();
+
+    // Preferences Modal Init
+    (function initPrefsModal(){
+        const prefsBtn = document.getElementById('prefsBtn');
+        const modal = document.getElementById('prefsModal');
+        const closeBtn = document.getElementById('prefsModalClose');
+        const resetBtn = document.getElementById('prefsResetBtn');
+        const saveBtn = document.getElementById('prefsSaveBtn');
+
+        if (prefsBtn && modal){
+            prefsBtn.addEventListener('click', () => {
+                modal.classList.add('visible');
+                // NEU: Body-Klasse setzen, damit #ui keine Klicks abfängt
+                document.body.classList.add('prefs-open');
+                renderPrefsModal();
+            });
+        }
+
+        if (closeBtn && modal){
+            closeBtn.addEventListener('click', () => {
+                modal.classList.remove('visible');
+                // NEU: Body-Klasse entfernen
+                document.body.classList.remove('prefs-open');
+            });
+        }
+
+        if (modal){
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal){
+                    modal.classList.remove('visible');
+                    // NEU: Body-Klasse entfernen
+                    document.body.classList.remove('prefs-open');
+                }
+            });
+        }
+
+        if (resetBtn){
+            resetBtn.addEventListener('click', () => {
+                if (confirm('Alle Einstellungen zurücksetzen?')){
+                    PREFS.teamColors = { left: '#60a5fa', right: '#f87171' };
+                    PREFS.controls = {
+                        player1: { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' },
+                        player2: { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
+                    };
+                    renderPrefsModal();
+                }
+            });
+        }
+
+        if (saveBtn){
+            saveBtn.addEventListener('click', () => {
+                savePrefs();
+                applyControlsToGame();
+                applyColorsToGame();
+                modal.classList.remove('visible');
+                // NEU: Body-Klasse entfernen
+                document.body.classList.remove('prefs-open');
+                alert('Preferences gespeichert!');
+            });
+        }
+
+        // Lade Preferences beim Start (falls noch nicht geschehen)
+        loadPrefs();
+        applyControlsToGame();
+        applyColorsToGame();
+    })();
+
+    // NEU: Initialisierung beim Laden sicherstellen, damit die Buttons 'Lokal'/'Online' funktionieren
+    window.addEventListener('DOMContentLoaded', () => {
+        try {
+            document.body.classList.remove('prefs-open');
+            document.getElementById('prefsModal')?.classList.remove('visible');
+            initUI();                 // UI-Events (Lokal/Online) aktivieren
+            showMenu();               // Menü sichtbar
+            updateSettingsVisibility();
+        } catch(e){ console.warn('UI init failed', e); }
+    });
+
+    // Fallback falls DOMContentLoaded verpasst wird (z. B. bei Inline-Script Timing)
+    window.addEventListener('load', () => {
+        try {
+            if (typeof initUI === 'function') initUI();
+            document.body.classList.remove('prefs-open');
+            document.getElementById('prefsModal')?.classList.remove('visible');
+        } catch(e){}
+    });
+</script>
+</body>
+</html>
