@@ -31,6 +31,15 @@
                 0 6px 10px hsla(0, 0%, 0%, 0.15);
         }
 
+        /* NEU: Wenn Preferences offen sind, soll das Menü keine Klicks abfangen */
+        .prefs-open #ui { pointer-events: none; }
+        /* NEU: Zusätzlich z-index des Menüs senken, damit das Modal sicher darüberliegt */
+        .prefs-open #ui { z-index: 0; }
+
+        /* NEU: Preferences-Modal deutlich über dem Menü und anderen Overlays */
+        #prefsModal { z-index: 20000; }
+        #prefsModal .modal-content { z-index: 20001; }
+
         html,body{
             height:100%; margin:0;
             background:radial-gradient(70% 90% at 50% 10%, #1f2a4a 0%, #040712 60%, #020617 100%);
@@ -46,7 +55,7 @@
             box-shadow:0 25px 80px rgba(0,0,0,.55);
         }
 
-        #ui{position:fixed; inset:0; display:grid; place-items:center; padding:18px;}
+        #ui{position:fixed; inset:0; display:grid; place-items:center; padding:18px; z-index: 10015;}
         .card{
             width:min(92vw,540px);
             background:linear-gradient(180deg,#0b122a,#070b1d);
@@ -330,9 +339,204 @@
             flex: 0;
             box-shadow: var(--shadow-s);
         }
+
+        #prefsBtn{
+            position: fixed;
+            top: 12px;
+            left: 12px;
+            z-index: 10020;
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            border-radius: 10px;
+            background: rgba(2,6,23,.55);
+            border: 1px solid rgba(36, 50, 68, 0.2);
+            color: var(--text);
+            font-size: 16px;
+            cursor: pointer;
+            box-shadow: var(--shadow-m);
+            display: grid;
+            place-items: center;
+        }
+        #prefsBtn:hover{ filter: brightness(1.1); }
+
+        /* Preferences Modal */
+        #prefsModal{
+            position:fixed; inset:0; z-index:10000; display:none;
+            align-items:center; justify-content:center;
+            backdrop-filter: blur(3px); background: rgba(0,0,0,0.5);
+            pointer-events:auto;
+        }
+        #prefsModal.visible{ display:flex; }
+        #prefsModal .modal-content{
+            position:relative; width:min(90vw, 600px); max-height:80vh; overflow-y:auto;
+            background: linear-gradient(180deg, #0b122a, #070b1d);
+            border:1px solid #1f2937; border-radius:18px; padding:24px;
+            box-shadow: var(--shadow-l);
+        }
+        #prefsModal .modal-close{
+            position:absolute; top:12px; right:12px; width:32px; height:32px; padding:0; font-size:18px; cursor:pointer;
+            background: rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.1); color: var(--text); border-radius:6px;
+            box-shadow: var(--shadow-s);
+        }
+        #prefsModal h3{ margin:0 0 16px; font-size:18px; font-weight:800; }
+
+        .prefs-section{
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        .prefs-section:last-child{ border-bottom: none; }
+        .prefs-section h4{
+            margin: 0 0 12px;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .color-picker{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .color-option{
+            width: 60px;
+            height: 60px;
+            border-radius: 10px;
+            cursor: pointer;
+            border: 3px solid transparent;
+            transition: all 0.15s ease-in-out;
+            box-shadow: var(--shadow-s);
+        }
+        .color-option:hover{
+            transform: scale(1.05);
+            filter: brightness(1.1);
+        }
+        .color-option.selected{
+            border-color: #fff;
+            box-shadow: 0 0 12px rgba(255,255,255,0.5);
+        }
+
+        .team-colors{
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .team-color-block{
+            flex: 1;
+            padding: 12px;
+            background: rgba(255,255,255,0.02);
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.04);
+        }
+        .team-color-block h5{
+            margin: 0 0 8px;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--muted);
+            text-transform: uppercase;
+        }
+
+        .key-input-row{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+            padding: 8px;
+            background: rgba(255,255,255,0.02);
+            border-radius: 8px;
+        }
+        .key-input-row label{
+            flex: 0 0 120px;
+            font-size: 13px;
+            color: var(--text);
+        }
+        .key-input-row input{
+            flex: 1;
+            height: 32px;
+            padding: 0 8px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(0,0,0,0.28);
+            color: var(--text);
+            font-size: 12px;
+            text-align: center;
+            outline: none;
+        }
+        .key-input-row input:focus{
+            border-color: rgba(255,255,255,0.2);
+        }
+        .key-input-row input.recording{
+            background: rgba(248,113,113,0.15);
+            border-color: var(--red);
+            animation: pulse 0.5s infinite;
+        }
+        @keyframes pulse{
+            0%, 100%{ opacity: 1; }
+            50%{ opacity: 0.6; }
+        }
+
+        .prefs-buttons{
+            display: flex;
+            gap: 8px;
+            margin-top: 20px;
+        }
+        .prefs-buttons button{
+            flex: 1;
+            padding: 10px;
+            border-radius: 10px;
+            border: 1px solid rgba(36, 50, 68, 0.3);
+            background: #020617;
+            color: var(--text);
+            cursor: pointer;
+            font-size: 14px;
+            box-shadow: var(--shadow-s);
+        }
+        .prefs-buttons button:hover{
+            filter: brightness(1.08);
+        }
+        .prefs-buttons button.primary{
+            background: linear-gradient(135deg,#0ea5e9,#22c55e);
+            color: #041016;
+            font-weight: 700;
+        }
     </style>
 </head>
 <body>
+<button id="prefsBtn" title="Preferences">⚙️</button>
+
+<!-- Preferences Modal -->
+<div id="prefsModal" aria-hidden="true">
+    <div class="modal-content" role="dialog" aria-label="Preferences">
+        <button class="modal-close" id="prefsModalClose" title="Schließen">✕</button>
+        <h3>Preferences</h3>
+
+        <!-- Team Colors Section -->
+        <div class="prefs-section">
+            <h4>Team Farben</h4>
+            <div class="team-colors" id="teamColorsContainer"></div>
+        </div>
+
+        <!-- Controls Section -->
+        <div class="prefs-section">
+            <h4>Steuerung Player 1 (WASD)</h4>
+            <div id="controlsPlayer1Container"></div>
+        </div>
+
+        <div class="prefs-section">
+            <h4>Steuerung Player 2 (Pfeile)</h4>
+            <div id="controlsPlayer2Container"></div>
+        </div>
+
+        <!-- Buttons -->
+        <div class="prefs-buttons">
+            <button class="primary" id="prefsResetBtn">Zurücksetzen</button>
+            <button id="prefsSaveBtn">Speichern</button>
+        </div>
+    </div>
+</div>
+
 <div id="ui">
     <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -562,24 +766,34 @@
     function renderChat(){
         const container = document.getElementById('chatMessages');
         if (!container) return;
-
         container.innerHTML = '';
         CHAT.messages.forEach(msg => {
             const div = document.createElement('div');
             div.className = 'chat-message ' + msg.type;
-
+            // Farbe anhand Nick bestimmen: Spielerfarbe, sonst Grau für Viewer/Unbekannt
+            let playerColor = getCss('--text');
+            let isViewer = false;
+            if (typeof msg.nick === 'string' && msg.nick.includes('(Viewer)')) isViewer = true;
+            if (!isViewer && (msg.type === 'message' || msg.type === 'command')){
+                for (let i=0;i<Object.keys(NET.playerNames).length;i++){
+                    if (NET.playerNames[i] === msg.nick){
+                        playerColor = (i % 2 === 0) ? getCss('--blue') : getCss('--red');
+                        break;
+                    }
+                }
+            }
+            if (isViewer || playerColor === getCss('--text')) {
+                playerColor = '#9CA3AF'; // Grau für Viewer/Unzugeordnete
+            }
             if (msg.type === 'system'){
                 div.textContent = msg.text;
             } else if (msg.type === 'command'){
-                div.innerHTML = `<span class="nick">${msg.nick}:</span> <span style="color:var(--red);">${msg.text}</span>`;
+                div.innerHTML = `<span class="nick" style="color:${playerColor};">${msg.nick}:</span> <span style="color:var(--red);">${msg.text}</span>`;
             } else {
-                div.innerHTML = `<span class="nick">${msg.nick}:</span> ${msg.text}`;
+                div.innerHTML = `<span class="nick" style="color:${playerColor};">${msg.nick}:</span> ${msg.text}`;
             }
-
             container.appendChild(div);
         });
-
-        // Auto-scroll to bottom
         container.scrollTop = container.scrollHeight;
     }
 
@@ -596,28 +810,17 @@
     function sendChatMessage(){
         const input = document.getElementById('chatInputField');
         if (!input) return;
-
         const text = input.value.trim();
         if (!text) return;
-
         input.value = '';
-
-        // Nickname bestimmen
         const nick = (mode === 'online' && NET.playerIndex !== null)
             ? (NET.playerNames[NET.playerIndex] || 'Player')
             : 'You';
-
         const isCommand = text.startsWith('/');
-
         if (mode === 'online'){
-            // Online: NICHT lokal anzeigen, nur zum Server senden → Server broadcastet zurück
-            if (isCommand){
-                wsSend({ type:'chat_command', text });
-            } else {
-                wsSend({ type:'chat_message', text });
-            }
+            // Online: nicht lokal anzeigen, Server spiegelt zurück
+            wsSend({ type: isCommand ? 'chat_command' : 'chat_message', text });
         } else {
-            // Lokal: direkt anzeigen
             addChatMessage(nick, text, isCommand ? 'command' : 'message');
         }
     }
@@ -689,24 +892,26 @@
     // Standard-CFG sichern, um lokale Spiele nicht durch Online-Overrides zu beeinflussen
     const CFG_DEFAULT = JSON.parse(JSON.stringify(CFG));
 
-    // ---------- Online (Server-Authoritative via WebSocket) ----------
-    // Trage hier deine Render-URL ein (wss://...):
-    const WS_URL = "wss://cararena-production.up.railway.app/";
+    // ---------- Online (Server-Authoritative via WebSocket) — jetzt über Relay ----------
+    // Trage hier deine Relay-URL ein (wss://...):
+    const WS_URL = "wss://cararena-relay.up.railway.app/" || "wss://localhost:8081/";
 
     const NET = {
         ws: null,
         connected: false,
         roomCode: "",
         playerIndex: null,
+        playerId: null,
         lastState: null,
         lastStateAt: 0,
         sendTimer: null,
         seq: 0,
-        playerNames: {},  // { 0: "Name1", 1: "Name2", ... }
+        playerNames: {},
         pingTimer: null,
         lastPingSentAt: 0,
         pingMs: null,
-        countdownStartAt: null, // timestamp wann countdown_start kam
+        countdownStartAt: null,
+        currentTournament: null,
     };
 
     // client-seitige Erwartung (für Anzeige bevor Server bestätigt)
@@ -749,28 +954,30 @@
 
     function netConnect(){
         return new Promise((resolve, reject) => {
-            if (!WS_URL || WS_URL.includes('YOUR-RENDER-SERVICE')){
-                netSetStatus('WS_URL fehlt (im Code eintragen)');
+            if (!WS_URL || WS_URL.includes('YOUR-RELAY-SERVICE')){
+                netSetStatus('WS_URL fehlt (Relay-URL eintragen)');
                 reject(new Error('WS_URL not set'));
                 return;
             }
 
-            netSetStatus('Connecting…');
+            netSetStatus('Relay: Verbinden…');
             const ws = new WebSocket(WS_URL);
             NET.ws = ws;
 
             ws.onopen = () => {
                 NET.connected = true;
-                netSetStatus('Connected');
-                resolve();
+                NET.playerId = Math.random().toString(36).slice(2, 10);
+                // Registriere dich beim Relay als Player
+                wsSend({ type: 'player_connect', playerId: NET.playerId });
+                netSetStatus('Relay: Verbunden');
             };
             ws.onclose = () => {
                 NET.connected = false;
-                netSetStatus('Disconnected');
+                netSetStatus('Relay: Getrennt');
             };
             ws.onerror = (e) => {
                 NET.connected = false;
-                netSetStatus('Error');
+                netSetStatus('Relay: Fehler');
                 reject(e);
             };
 
@@ -778,1381 +985,143 @@
                 let msg;
                 try{ msg = JSON.parse(ev.data); }catch{ return; }
 
-                if (msg.type === 'pong'){
-                    // Roundtrip berechnen
-                    const sent = (typeof msg.t === 'number') ? msg.t : NET.lastPingSentAt;
-                    const rtt = performance.now() - sent;
-                    NET.pingMs = rtt;
-                    updatePingHud(rtt);
+                if (msg.type === 'relay_welcome'){
+                    console.log('[Relay] Welcome:', msg);
                     return;
                 }
 
-                if (msg.type === 'room_created'){
-                    NET.roomMaxPlayers = msg.maxPlayers || 2;
-                    expectedPlayers = NET.roomMaxPlayers;
-                    NET.roomCode = msg.code;
-                    NET.playerIndex = msg.playerIndex;
-                    NET.lastState = null;
-                    NET.seq = 0;
-                    mode = 'online';
-                    // enter lobby (don't start game yet)
-                    enterLobby();
-                    netSetStatus('Host • Code ' + NET.roomCode);
-                    if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
-                } else if (msg.type === 'join_ok'){
-                    NET.roomMaxPlayers = msg.maxPlayers || 2;
-                    expectedPlayers = NET.roomMaxPlayers;
-                    NET.roomCode = msg.code;
-                    NET.playerIndex = msg.playerIndex;
-                    NET.lastState = null;
-                    NET.seq = 0;
-                    mode = 'online';
-                    // enter lobby (don't start game yet)
-                    enterLobby();
-                    netSetStatus('Joined • Code ' + NET.roomCode);
-                    if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
-                } else if (msg.type === 'join_failed'){
-                    netSetStatus('Join failed: ' + (msg.reason || 'unknown'));
-                    // show menu again and hide lobby if we had opened it
-                    leaveLobby();
-                } else if (msg.type === 'state'){
-                    NET.lastState = msg;
-                    NET.lastStateAt = performance.now();
-                    if (msg.playerNames) NET.playerNames = msg.playerNames;
-
-                    const lobbyEl = document.getElementById('lobby');
-                    if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
-
-                    if (msg.started) {
-                        startOnline();
-                        if (lobbyEl) lobbyEl.style.display = 'none';
-                    }
-                    // cfgPartial NICHT mehr in jedem state – nur beim Start
-                } else if (msg.type === 'start'){
-                    startOnline();
-                    const lobbyEl = document.getElementById('lobby');
-                    if (lobbyEl) lobbyEl.style.display = 'none';
-                } else if (msg.type === 'player_joined' || msg.type === 'player_left'){
-                    if (msg.playerNames) { NET.playerNames = msg.playerNames; }
-                    const lobbyEl = document.getElementById('lobby');
-                    if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
-                } else if (msg.type === 'countdown_start'){
-                    // Server sagt: Countdown startet jetzt (3 Sekunden)
-                    NET.countdownStartAt = performance.now();
-                    const lobbyEl = document.getElementById('lobby');
-                    if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
-                    // Zeige Countdown-Overlay, aber client zählt selbst runter
-                    showCountdown(3, 3, 'Spiel startet in');
-                } else if (msg.type === 'switch_failed'){
-                    netSetStatus('Teamwechsel fehlgeschlagen: ' + (msg.reason || 'busy'));
-                } else if (msg.type === 'switch_ok'){
-                    if (typeof msg.newIndex === 'number') NET.playerIndex = msg.newIndex;
-                } else if (msg.type === 'room_closed'){
-                    netSetStatus('Room closed');
-                    leaveLobby();
-                } else if (msg.type === 'chat_message'){
-                    // Chat-Nachricht vom Server (von einem anderen Spieler)
-                    const nick = msg.nick || 'Player';
-                    const text = msg.text || '';
-                    addChatMessage(nick, text, 'message');
-                } else if (msg.type === 'chat_command'){
-                    // Chat-Befehl vom Server (von einem anderen Spieler)
-                    const nick = msg.nick || 'Player';
-                    const text = msg.text || '';
-                    addChatMessage(nick, text, 'command');
-                } else if (msg.type === 'chat_system'){
-                    // System-Nachricht vom Server
-                    const text = msg.text || '';
-                    addChatMessage('System', text, 'system');
+                // NEU: Relay signalisiert, dass eine Instanz aufgeweckt wird
+                if (msg.type === 'assign_pending'){
+                    netSetStatus('Relay: Instanz wird gestartet…');
+                    return;
                 }
+
+                // NEU/weiterhin: Relay liefert direkt Ziel-Instanz via room_created/join_ok inkl. gamePort
+                if (msg.type === 'room_created' || msg.type === 'join_ok'){
+                    const gamePort = msg.gamePort || 8080;
+                    const gameWsUrl = `ws://${window.location.hostname}:${gamePort}/`;
+                    ws.close();
+                    NET.connected = false;
+
+                    netSetStatus('Game-Server: Verbinden…');
+                    const gameWs = new WebSocket(gameWsUrl);
+                    NET.ws = gameWs;
+                    NET.connected = true;
+
+                    gameWs.onopen = () => {
+                        wsSend({
+                            type: msg.type === 'room_created' ? 'create_room' : 'join_room',
+                            code: msg.code,
+                            playerId: NET.playerId,
+                            playerName: msg.playerName,
+                            maxPlayers: msg.maxPlayers
+                        });
+                        netSetStatus('Game-Server: Verbunden');
+                        resolve();
+                    };
+                    gameWs.onclose = () => { NET.connected = false; netSetStatus('Game-Server: Getrennt'); };
+                    gameWs.onerror = () => { NET.connected = false; netSetStatus('Game-Server: Fehler'); };
+                    gameWs.onmessage = (ev2) => {
+                        let gameMsg; try{ gameMsg = JSON.parse(ev2.data); }catch{ return; }
+                        handleGameMessage(gameMsg);
+                    };
+                    return;
+                }
+
+                // ...existing code (andere Relay-Events)...
             };
         });
     }
 
-    function netLocalInput(){
-        // Online: jeder Client steuert genau 1 Spieler (WASD + Space)
-        return {
-            up: !!Keys['KeyW'],
-            down: !!Keys['KeyS'],
-            left: !!Keys['KeyA'],
-            right: !!Keys['KeyD'],
-            boost: !!Keys['Space'],
-        };
-    }
-
-    function netStartSending(){
-        if (NET.sendTimer) clearInterval(NET.sendTimer);
-        NET.sendTimer = setInterval(() => {
-            if (mode !== 'online' || !NET.connected) return;
-            NET.seq++;
-            const input = netLocalInput();
-            wsSend({ type:'input', input:{...input, seq: NET.seq }});
-        }, 16); // ~60 Hz
-    }
-
-    function applyServerState(msg){
-         // Server nutzt dieselben Pixel-Koordinaten wie das Canvas.
-         if (!msg) return;
-         if (msg.score){
-             score = msg.score;
-             s1El.textContent = score[0];
-             s2El.textContent = score[1];
-         }
-         if (msg.ball){
-             ball.pos.x = msg.ball.x;
-             ball.pos.y = msg.ball.y;
-             ball.vel.x = msg.ball.vx || 0;
-             ball.vel.y = msg.ball.vy || 0;
-         }
-        // Namen vom Server übernehmen (Array)
-        if (msg.playerNames && typeof msg.playerNames === 'object'){
-            NET.playerNames = msg.playerNames;
-        }
-        // Lobby/Match status vom Server (optional)
-        NET.serverStarted = !!msg.started;
-        NET.serverCountdown = (typeof msg.countdown === 'number') ? msg.countdown : (msg.countdown === undefined ? undefined : Number(msg.countdown));
-         if (msg.car && Array.isArray(msg.car)){
-             // stelle sicher, dass lokale Anzeige genug Cars hat
-             if (cars.length < msg.car.length){
-                 const add = msg.car.length - cars.length;
-                 for (let k=0;k<add;k++){
-                     const idx = cars.length;
-                     const side = (idx % 2 === 0) ? 'left' : 'right';
-                     const controls = (idx===0) ? { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' }
-                                    : (idx===1) ? { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
-                                    : { up:null, down:null, left:null, right:null, boost:null };
-                     cars.push(new Car({
-                         x: canvas.width/2, y: canvas.height/2,
-                         color: (idx%2===0) ? getCss('--blue') : getCss('--red'),
-                         side,
-                         controls,
-                         isBot:false
-                     }));
-                 }
-             }
-             for (let i=0;i<msg.car.length && i<cars.length;i++){
-                 cars[i].pos.x = msg.car[i].x;
-                 cars[i].pos.y = msg.car[i].y;
-                 cars[i].vel.x = msg.car[i].vx || 0;
-                 cars[i].vel.y = msg.car[i].vy || 0;
-             }
-             if (Array.isArray(msg.energy)){
-                 for (let i=0;i<msg.energy.length && i<cars.length;i++){
-                     if (msg.energy[i] !== undefined) cars[i].energy = msg.energy[i];
-                 }
-             }
-         }
-     }
-
-
-    // ---------- Input ----------
-    const Keys = Object.create(null);
-    addEventListener('keydown', (e) => {
-        Keys[e.code] = true;
-        if (e.code === 'Escape') showMenu();
-        if (e.code === 'KeyR') reset(true);
-    });
-    addEventListener('keyup', (e) => Keys[e.code] = false);
-
-    // ---------- Math ----------
-    class Vec {
-        constructor(x=0,y=0){this.x=x;this.y=y;}
-        clone(){return new Vec(this.x,this.y)}
-        set(x,y){this.x=x;this.y=y; return this;}
-        add(v){this.x+=v.x; this.y+=v.y; return this;}
-        sub(v){this.x-=v.x; this.y-=v.y; return this;}
-        mul(s){this.x*=s; this.y*=s; return this;}
-        len(){return Math.hypot(this.x,this.y)}
-        norm(){const l=this.len()||1; this.x/=l; this.y/=l; return this;}
-        dot(v){return this.x*v.x + this.y*v.y}
-    }
-
-    const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
-
-    // ---------- Entities ----------
-    class Car {
-        constructor({x,y,color,controls,isBot=false,side='left'}){
-            this.pos = new Vec(x,y);
-            this.vel = new Vec(0,0);
-            this.color = color;
-            this.controls = controls;
-            this.isBot = isBot;
-            this.side = side; // 'left' or 'right'
-            this.r = CFG.carR;
-            this.mass = CFG.carMass;
-            this.energy = 100;
-            this.trail = [];
-            this.ai = { mode:'', until:0, target:this.pos.clone(), lastDist: 9999, stall: 0, clearSide: 0 }; // Bot-Memory gegen "Zittern"
-        }
-
-        getMaxSpeed(isBoosting){
-            return CFG.carMaxSpeed * (isBoosting ? CFG.boostMaxMul : 1);
-        }
-
-        applyInputDir(dir, isBoosting, dt){
-            // dir should be normalized or zero
-            if (dir.len() > 1e-6) dir.norm();
-
-            const acc = CFG.carAcc * (isBoosting ? CFG.boostAccMul : 1);
-            this.vel.add(dir.mul(acc * dt));
-
-            // cap speed
-            const maxV = this.getMaxSpeed(isBoosting);
-            const sp = this.vel.len();
-            if (sp > maxV) this.vel.norm().mul(maxV);
-        }
-
-        inputHuman(dt){
-            const c = this.controls;
-            // NOTE: Spieler 1: A = links, D = rechts
-            const x = (Keys[c.right] ? 1 : 0) + (Keys[c.left] ? -1 : 0);
-            const y = (Keys[c.down] ? 1 : 0) + (Keys[c.up] ? -1 : 0);
-
-            let dir = new Vec(x,y);
-            // diagonale nicht schneller
-            if (dir.len() > 1) dir.norm();
-
-            const wantsBoost = !!Keys[c.boost];
-            const isBoosting = wantsBoost && this.energy > 0.1 && dir.len() > 0.01;
-
-            // energy
-            if (isBoosting) this.energy = Math.max(0, this.energy - CFG.boostDrain * dt);
-            else this.energy = Math.min(100, this.energy + CFG.boostRegen * dt);
-
-            this.applyInputDir(dir, isBoosting, dt);
-        }
-
-        inputBot(ball, dt){
-            // Bot v3.7 (soccer-ish defending):
-            // - MARK/SHADOW: zwischen Gegner/Ball und eigenem Tor stehen (Schussbahn schließen)
-            // - INTERCEPT: bei Schüssen Richtung eigenes Tor eine Abfang-Position nehmen
-            // - CHALLENGE nur wenn sinnvoll, sonst geduldig blocken (darf auch stehen bleiben)
-            // - DRIBBLE/ATTACK wenn Vorteil oder Ball frei
-
-            const now = performance.now();
-            const goalLeft  = new Vec(CFG.pad - CFG.goalDepth, canvas.height/2);
-            const goalRight = new Vec(canvas.width - (CFG.pad - CFG.goalDepth), canvas.height/2);
-
-            const ownGoal   = (this.side === 'right') ? goalRight : goalLeft;
-            const enemyGoal = (this.side === 'right') ? goalLeft  : goalRight;
-
-            // Find opponent und self by index (robust für variable car count)
-            let self, opponent;
-            for (let i=0;i<cars.length;i++){
-                if (cars[i] === this) { self = this; opponent = cars[(i+1)%cars.length]; break; }
-            }
-            if (!opponent) opponent = cars[cars.length-1]; // fallback
-
-            // Prediction
-            const pBall = ball.pos.clone().add(ball.vel.clone().mul(CFG.botPrediction));
-            const distBotBall = pBall.clone().sub(this.pos).len();
-            const distOppBall = pBall.clone().sub(opponent.pos).len();
-            const distBallOwnGoal = pBall.clone().sub(ownGoal).len();
-
-            const ballSpeed = ball.vel.len();
-            const inOwnHalf = (this.side === 'right') ? (pBall.x > canvas.width * 0.54) : (pBall.x < canvas.width * 0.46);
-            const velTowardOwn = (this.side === 'right') ? (ball.vel.x > 70) : (ball.vel.x < -70);
-
-            // Besitz/Pressure grob schätzen
-            const oppNearBall = distOppBall < 120;
-            const botNearBall = distBotBall < 120;
-            const oppPossess = oppNearBall && (distOppBall + 18 < distBotBall);
-            const botPossess = botNearBall && (distBotBall + 18 < distOppBall);
-
-            // Danger: nahe Tor oder Schuss Richtung Tor in eigener Hälfte
-            const danger = (distBallOwnGoal < 320) || (inOwnHalf && velTowardOwn && ballSpeed > 60);
-
-            // Safe: Gegner nicht direkt am Ball ODER Bot deutlich näher
-            const safeToTake = (distOppBall > 205) || (distBotBall + 50 < distOppBall);
-
-            // Richtungen
-            const center = new Vec(canvas.width/2, canvas.height/2);
-            const toCenter = center.clone().sub(pBall).norm();
-
-            const rawClearDir = pBall.clone().sub(ownGoal).norm();
-            // Clears leicht Richtung Mitte => weniger "komisches" seitliches Gezappel
-            const clearDir = rawClearDir.clone().mul(0.72).add(toCenter.clone().mul(0.28)).norm();
-            const attackDir = enemyGoal.clone().sub(pBall).norm();
-
-            const offset = this.r + ball.r + 16;
-
-            // -------- Commit Mode (gegen Flip-Flop) --------
-            if (!this.ai) this.ai = { mode:'', until:0, target:this.pos.clone(), lastDist: 9999, stall: 0, clearSide: 0 };
-
-            // DRIBBLE-Stall-Erkennung (gegen Weglaufen/Zittern): zählt Frames, in denen Distanz zum Ball größer wird
-            if (this.ai.lastDist === 9999) this.ai.lastDist = distBotBall;
-            if (distBotBall > this.ai.lastDist + 6) this.ai.stall = (this.ai.stall || 0) + 1;
-            else this.ai.stall = 0;
-            this.ai.lastDist = distBotBall;
-
-            if (now > this.ai.until){
-                let mode;
-
-                // Wenn sehr gefährlich: lieber blocken/klären statt fancy
-                if (danger){
-                    if (safeToTake || botNearBall) mode = 'CLEAR';
-                    else mode = (distBotBall < 165) ? 'CHALLENGE' : 'SHADOW';
-                } else {
-                    // Nicht gefährlich: wenn Gegner klar am Ball -> markieren, sonst Ball nehmen oder chasen
-                    if (oppPossess) mode = 'MARK';
-                    else {
-                        const advantage = (distBotBall + 55 < distOppBall) || (distOppBall > 235);
-                        mode = advantage ? 'DRIBBLE' : 'CHASE';
-                    }
-                }
-
-                this.ai.mode = mode;
-                // längere Commits für stabile Modi (CLEAR/DRIBBLE brauchen Zeit)
-                const commitTimes = {
-                    'SHADOW': 420,
-                    'MARK': 420,
-                    'CLEAR': 580,      // länger damit nicht ständig wechsel
-                    'DRIBBLE': 580,    // länger damit nicht ständig wechsel
-                    'CHALLENGE': 280,
-                    'CHASE': 200
-                };
-                this.ai.until = now + (commitTimes[mode] || 280);
-            }
-
-            let mode = this.ai.mode;
-
-            // Wenn DRIBBLE/CLEAR komisch wird (Bot läuft weg / zittert), dann kurz auf CHASE umschalten
-            if ((mode === 'DRIBBLE' || mode === 'CLEAR') && this.ai.stall > 16 && distBotBall > 220){
-                this.ai.mode = 'CHASE';
-                this.ai.until = now + 360;
-                this.ai.stall = 0;
-                mode = 'CHASE';
-            }
-
-            // -------- Intercept Point (wenn Ball Richtung eigenes Tor fliegt) --------
-            let interceptY = null;
-            if (velTowardOwn && Math.abs(ball.vel.x) > 35){
-                const goalLineX = (this.side === 'right') ? (canvas.width - CFG.pad + 6) : (CFG.pad - 6);
-                const dx = goalLineX - ball.pos.x;
-                const tHit = dx / (ball.vel.x || 1e-6);
-                if (tHit > 0 && tHit < 1.2){
-                    interceptY = ball.pos.y + ball.vel.y * tHit;
-                    interceptY = clamp(interceptY, CFG.pad + 40, canvas.height - CFG.pad - 40);
-                }
-            }
-
-            // -------- Desired Target --------
-            let desired;
-
-            if (mode === 'CLEAR'){
-                // Fix gegen "CLEAR-Zittern":
-                // Wenn der Bot vor dem Ball ist (zwischen Ball und Clear-Richtung), muss er seitlich "um den Ball herum".
-                // Sonst versucht er ständig den Behind-Point zu erreichen, stößt aber am Ball ab => hin und her.
-
-                if (!this.ai.clearSide) this.ai.clearSide = (pBall.y < canvas.height/2) ? 1 : -1; // 1 = unten vorbei, -1 = oben vorbei
-
-                const ballToBot = this.pos.clone().sub(pBall);
-                const frontness = ballToBot.dot(clearDir); // >0 = Bot ist vor dem Ball (schlecht zum Klären)
-
-                const perp = new Vec(-clearDir.y, clearDir.x);
-
-                if (frontness > 10){
-                    // Umpositionieren: erst seitlich um den Ball, dann hinter ihn
-                    const behind = pBall.clone().sub(clearDir.clone().mul(offset * 2.1));
-                    desired = behind.add(perp.mul(this.ai.clearSide * offset * 2.8));
-                } else {
-                    // Hinter/seitlich vom Ball: aktiv durchschieben
-                    if (distBotBall < 105) desired = pBall.clone().add(clearDir.clone().mul(offset * 3.6));
-                    else desired = pBall.clone().sub(clearDir.clone().mul(offset * 2.2));
-
-                    // sobald wir klar "hinter" dem Ball sind, Side resetten (damit er später neu wählen kann)
-                    if (frontness < -18) this.ai.clearSide = 0;
-                }
-
-            } else if (mode === 'CHALLENGE'){
-                this.ai.clearSide = 0;
-                // Direkt rein, aber nicht bis ins Tor "hineinschieben": leicht weg vom Tor anfahren
-                desired = pBall.clone().add(clearDir.clone().mul(36));
-
-            } else if (mode === 'DRIBBLE'){
-                // Hinter den Ball + wall-aware angle
-                let behind = pBall.clone().sub(attackDir.clone().mul(offset * 2.1));
-
-                const nearRight = pBall.x > canvas.width - CFG.pad - 34;
-                const nearLeft  = pBall.x < CFG.pad + 34;
-                const nearTop   = pBall.y < CFG.pad + 34;
-                const nearBot   = pBall.y > canvas.height - CFG.pad - 34;
-
-                if (this.side === 'right' && nearRight){
-                    const sign = (pBall.y < canvas.height/2) ? 1 : -1;
-                    behind = pBall.clone().add(new Vec(-offset * 1.3, sign * offset * 2.2));
-                }
-                if (this.side === 'left' && nearLeft){
-                    const sign = (pBall.y < canvas.height/2) ? 1 : -1;
-                    behind = pBall.clone().add(new Vec( offset * 1.3, sign * offset * 2.2));
-                }
-                if (nearTop) behind.y = pBall.y + offset * 2.0;
-                if (nearBot) behind.y = pBall.y - offset * 2.0;
-
-                const behindDist = behind.clone().sub(this.pos).len();
-                // Wenn "behind" viel weiter weg ist als der Ball selbst, dann lieber direkt zum Ball (sonst läuft er weg)
-                if (behindDist > distBotBall + 110) desired = pBall.clone();
-                else if (distBotBall < 110) desired = pBall.clone().add(attackDir.clone().mul(135));
-                else if (behindDist < 60) desired = pBall.clone().add(attackDir.clone().mul(100));
-                else desired = behind;
-
-                // Wenn Ball in eigener Ecke klebt: zur Mitte ziehen
-                if (inOwnHalf && (nearTop || nearBot)) desired.y = canvas.height/2;
-
-            } else if (mode === 'MARK'){
-                // Fußball-like: Gegner begleiten, Schussbahn schließen, Chance zum Abnehmen nutzen
-                const threat = opponent.pos.clone();
-                const blockDir = threat.clone().sub(ownGoal).norm();
-                const blockDist = danger ? 280 : 380;
-                desired = ownGoal.clone().add(blockDir.mul(blockDist));
-
-                // etwas zur Ballseite ziehen, um Pässe/Dribbling abzufangen
-                desired.x += (pBall.x - desired.x) * 0.1;
-                desired.y += (pBall.y - desired.y) * 0.14;
-
-                if (interceptY !== null) desired.y = interceptY;
-
-                // Wenn Ball wirklich frei und nah => abnehmen
-                if (safeToTake && distBotBall < 165) desired = pBall.clone();
-
-            } else { // SHADOW / CHASE
-                if (danger){
-                    // SHADOW: zwischen Ball und eigenem Tor, sehr schwer zu schießen
-                    const blockDir = pBall.clone().sub(ownGoal).norm();
-                    const blockDist = 190;
-                    desired = ownGoal.clone().add(blockDir.mul(blockDist));
-                    if (interceptY !== null) desired.y = interceptY;
-
-                    // Wenn es plötzlich safe wird: abnehmen
-                    if (safeToTake && distBotBall < 170) desired = pBall.clone();
-                } else {
-                    // CHASE: aktiv zum Ball
-                    desired = pBall.clone();
-                }
-            }
-
-            // Grenzen
-            desired.y = clamp(desired.y, CFG.pad + 45, canvas.height - CFG.pad - 45);
-
-            // -------- Target Smoothing: reduzieren für CLEAR/DRIBBLE (kein über-smoothing) --------
-            const slowSmooth = (mode === 'CLEAR' || mode === 'DRIBBLE');
-            const alpha = slowSmooth ? (1 - Math.exp(-4 * dt)) : (1 - Math.exp(-10 * dt));  // langsameres smoothing für stabile modes
-            this.ai.target.x += (desired.x - this.ai.target.x) * alpha;
-            this.ai.target.y += (desired.y - this.ai.target.y) * alpha;
-
-            let dir = this.ai.target.clone().sub(this.pos);
-            const dist = dir.len();
-
-            // "Darf stehen bleiben": wenn Ziel erreicht und wir blocken/marken, dann keine Mikro-Bewegung
-            const patient = (mode === 'SHADOW' || mode === 'MARK');
-            if (patient && dist < 18 && this.vel.len() < 55){
-                dir.set(0,0);
-                // etwas schneller regenerieren wenn er wirklich wartet
-                this.energy = Math.min(100, this.energy + (CFG.boostRegen * 0.65) * dt);
-            } else {
-                if (dist > 1) dir.mul(1 / dist);
-            }
-
-            // Boost nur, wenn es Sinn macht (nicht beim Blocken)
-            const canBoost = (mode !== 'SHADOW' && mode !== 'MARK');
-            const emergency = danger && (distOppBall + 40 < distBotBall) && dist > 115;
-            const wantsBoost = canBoost && (this.energy > 18) && ((dist > CFG.botBoostDist) || emergency);
-            const isBoosting = wantsBoost && dir.len() > 0.01;
-
-            if (isBoosting) this.energy = Math.max(0, this.energy - CFG.boostDrain * dt);
-            else this.energy = Math.min(100, this.energy + CFG.boostRegen * dt);
-
-            this.applyInputDir(dir, isBoosting, dt);
-        }
-
-        integrate(dt){
-            // linear drag
-            this.vel.mul(Math.exp(-CFG.carDrag * dt));
-            this.pos.add(this.vel.clone().mul(dt));
-
-            // keep in field bounds (cars dürfen auch in die Tore reinfahren)
-            const p = CFG.pad;
-            const cy = canvas.height/2;
-            const halfG = CFG.goalWidth/2;
-            const inGoalMouth = Math.abs(this.pos.y - cy) < halfG;
-
-            const minX = inGoalMouth ? (p - CFG.goalDepth) : p;
-            const maxX = inGoalMouth ? (canvas.width - (p - CFG.goalDepth)) : (canvas.width - p);
-
-            this.pos.x = clamp(this.pos.x, minX, maxX);
-            this.pos.y = clamp(this.pos.y, p, canvas.height - p);
-
-            // trail
-            this.trail.push({x:this.pos.x, y:this.pos.y, a: clamp(this.vel.len()/this.getMaxSpeed(false),0,1)});
-            if (this.trail.length > 14) this.trail.shift();
-        }
-
-        draw(){
-            // trail
-            for (let i=0;i<this.trail.length;i++){
-                const t = this.trail[i];
-                const k = i / this.trail.length;
-                ctx.globalAlpha = 0.08 * k * (0.3 + t.a);
-                ctx.beginPath();
-                ctx.arc(t.x, t.y, this.r * (0.55 + 0.25*k), 0, Math.PI*2);
-                ctx.fillStyle = this.color;
-                ctx.fill();
-            }
-            ctx.globalAlpha = 1;
-
-            // body
-            ctx.save();
-            ctx.translate(this.pos.x, this.pos.y);
-
-            // shadow
-            ctx.globalAlpha = 0.22;
-            ctx.beginPath();
-            ctx.ellipse(0, this.r*0.75, this.r*1.05, this.r*0.55, 0, 0, Math.PI*2);
-            ctx.fillStyle = '#000';
-            ctx.fill();
-            ctx.globalAlpha = 1;
-
-            // car circle base
-            ctx.beginPath();
-            ctx.arc(0,0,this.r,0,Math.PI*2);
-            ctx.fillStyle = this.color;
-            ctx.fill();
-
-            // front hint (direction by velocity)
-            const v = this.vel.clone();
-            if (v.len() > 5) v.norm();
-            ctx.beginPath();
-            ctx.arc(v.x*this.r*0.65, v.y*this.r*0.65, this.r*0.35, 0, Math.PI*2);
-            ctx.fillStyle = 'rgba(2,6,23,.55)';
-            ctx.fill();
-
-            // boost bar
-            const w = 34, h = 6;
-            ctx.translate(0, -this.r - 14);
-            ctx.globalAlpha = 0.9;
-            ctx.fillStyle = 'rgba(2,6,23,.6)';
-            roundRect(ctx, -w/2, -h/2, w, h, 4); ctx.fill();
-            ctx.fillStyle = 'rgba(34,197,94,.95)';
-            roundRect(ctx, -w/2, -h/2, w*(this.energy/100), h, 4); ctx.fill();
-            ctx.globalAlpha = 1;
-
-            ctx.restore();
-        }
-    }
-
-    class Ball {
-        constructor(x,y){
-            this.pos = new Vec(x,y);
-            this.vel = new Vec(0,0);
-            this.r = CFG.ballR;
-            this.mass = CFG.ballMass;
-        }
-
-        integrate(dt){
-            this.vel.mul(Math.exp(-CFG.ballDrag * dt));
-            this.pos.add(this.vel.clone().mul(dt));
-
-            // walls with goal openings
-            const p = CFG.pad;
-            const cy = canvas.height/2;
-            const halfG = CFG.goalWidth/2;
-            const inGoalMouth = Math.abs(this.pos.y - cy) < halfG;
-
-            // top/bottom
-            if (this.pos.y - this.r < p){ this.pos.y = p + this.r; this.vel.y *= -CFG.wallRestitution; }
-            if (this.pos.y + this.r > canvas.height - p){ this.pos.y = canvas.height - p - this.r; this.vel.y *= -CFG.wallRestitution; }
-
-            // left/right (bounce unless within goal opening)
-            if (!inGoalMouth){
-                if (this.pos.x - this.r < p){ this.pos.x = p + this.r; this.vel.x *= -CFG.wallRestitution; }
-                if (this.pos.x + this.r > canvas.width - p){ this.pos.x = canvas.width - p - this.r; this.vel.x *= -CFG.wallRestitution; }
-            }
-        }
-
-        draw(){
-            // glow
-            ctx.globalAlpha = 0.22;
-            ctx.beginPath();
-            ctx.arc(this.pos.x, this.pos.y, this.r*2.2, 0, Math.PI*2);
-            ctx.fillStyle = '#f59e0b';
-            ctx.fill();
-            ctx.globalAlpha = 1;
-
-            // ball
-            ctx.beginPath();
-            ctx.arc(this.pos.x, this.pos.y, this.r, 0, Math.PI*2);
-            ctx.fillStyle = getCss('--ball');
-            ctx.fill();
-
-            // small highlight
-            ctx.globalAlpha = 0.55;
-            ctx.beginPath();
-            ctx.arc(this.pos.x - this.r*0.25, this.pos.y - this.r*0.35, this.r*0.35, 0, Math.PI*2);
-            ctx.fillStyle = '#fff';
-            ctx.fill();
-            ctx.globalAlpha = 1;
-        }
-    }
-
-    function getCss(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
-
-    function botModeLabel(mode){
-        switch(mode){
-            case 'CLEAR': return 'CLEAR (Klären)';
-            case 'CHALLENGE': return 'CHALLENGE (Attackieren)';
-            case 'SHADOW': return 'SHADOW (Abschirmen)';
-            case 'MARK': return 'MARK (Markieren)';
-            case 'INTERCEPT': return 'INTERCEPT (Abfangen)';
-            case 'DRIBBLE': return 'DRIBBLE (Dribbeln)';
-            case 'CHASE': return 'CHASE (Jagen)';
-            default: return mode || '';
-        }
-    }
-
-    function roundRect(c,x,y,w,h,r){
-        c.beginPath();
-        c.moveTo(x+r,y);
-        c.arcTo(x+w,y,x+w,y+h,r);
-        c.arcTo(x+w,y+h,x,y+h,r);
-        c.arcTo(x,y+h,x,y,r);
-        c.arcTo(x,y,x+w,y,r);
-        c.closePath();
-    }
-
-    // ---------- Physics: collisions ----------
-    function resolveCircleCollision(a, b, restitution){
-        const n = b.pos.clone().sub(a.pos);
-        const dist = n.len();
-        const minDist = a.r + b.r;
-        if (dist <= 0 || dist >= minDist) return;
-
-        const normal = n.mul(1 / dist); // normalize
-        const penetration = minDist - dist;
-
-        // positional correction (split)
-        const totalMass = a.mass + b.mass;
-        const aMove = penetration * (b.mass / totalMass);
-        const bMove = penetration * (a.mass / totalMass);
-        a.pos.add(normal.clone().mul(-aMove));
-        b.pos.add(normal.clone().mul(bMove));
-
-        // relative velocity
-        const rv = b.vel.clone().sub(a.vel);
-        const velAlongNormal = rv.dot(normal);
-        if (velAlongNormal > 0) return; // separating
-
-        const e = restitution;
-        const j = -(1 + e) * velAlongNormal / (1 / a.mass + 1 / b.mass);
-        const impulse = normal.clone().mul(j);
-        a.vel.add(impulse.clone().mul(-1 / a.mass));
-        b.vel.add(impulse.clone().mul( 1 / b.mass));
-
-        // extra kick for fun when cars hit the ball hard
-        const hardHit = Math.abs(velAlongNormal);
-        if ((a instanceof Car && b instanceof Ball) || (b instanceof Car && a instanceof Ball)){
-            if (hardHit > 115){
-                const ball = (a instanceof Ball) ? a : b;
-                const car = (a instanceof Car) ? a : b;
-                ball.vel.add(normal.clone().mul(CFG.kickImpulse * (car.vel.len()/CFG.carMaxSpeed)));
-            }
-        }
-    }
-
-    // ---------- Game State ----------
-    let mode = 'pvp';
-    let cars = [];
-    let ball;
-    let score = [0,0];
-    let running = false;
-    let lastT = 0;
-
-    // local countdown state (für local games)
-    let localCountdown = 0;           // Sekunden verbleibend (float)
-    let localCountdownActive = false; // true solange Countdown läuft
-
-    function kickoff(){
-        ball.pos.set(canvas.width/2, canvas.height/2);
-        ball.vel.set((Math.random()*2-1)*120, (Math.random()*2-1)*70);
-
-        cars[0].pos.set(200, canvas.height/2);
-        cars[0].vel.set(0,0);
-        cars[0].energy = 100;
-
-        cars[1].pos.set(canvas.width-200, canvas.height/2);
-        cars[1].vel.set(0,0);
-        cars[1].energy = 100;
-    }
-
-    function reset(keepScore=false, playersCount=2){
-        cars = [];
-        for (let i=0;i<playersCount;i++){
-            const side = (i % 2 === 0) ? 'left' : 'right';
-            const x = (side === 'left') ? 200 : canvas.width - 200;
-            const y = (playersCount === 2) ? (canvas.height/2) : (canvas.height/2 + ((i < playersCount/2) ? -40 : 40));
-            const controls = (i === 0) ? { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' }
-                            : (i === 1) ? { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
-                            : { up:null, down:null, left:null, right:null, boost:null };
-            cars.push(new Car({
-                x, y,
-                color: i%2===0 ? getCss('--blue') : getCss('--red'),
-                side,
-                controls,
-                isBot: (mode==='pve' && i===1) ? true : false
-            }));
-        }
-        ball = new Ball(canvas.width/2, canvas.height/2);
-        if (!keepScore) score = [0,0];
-        s1El.textContent = score[0];
-        s2El.textContent = score[1];
-        kickoff();
-    }
-
-    function showMenu(){
-        running = false;
-        if (mode==='online') netDisconnect();
-        ui.style.display = 'grid';
-        hud.hidden = true;
-        // Hide all option panels, show only main choice
-        const lo = document.getElementById('localOptions');
-        const on = document.getElementById('onlineOptions');
-        if (lo) lo.style.display = 'none';
-        if (on) on.style.display = 'none';
-        // Settings-Button zusammen mit den Panels ausblenden
-        updateSettingsVisibility();
-        updateChatVisibility();
-    }
-
-
-    function startOnline(){
-         // Online: wir starten das Rendering, State kommt vom Server
-         // vor dem Start Settings-Panel schließen
-         document.getElementById('settingsPanel')?.classList.remove('visible');
-         ui.style.display = 'none';
-         hud.hidden = false;
-         // lokale Anzeige mit erwarteter Anzahl (2 oder 4)
-         reset(false, expectedPlayers);
-         // kein Bot im Online-Modus (alle echten Spieler)
-         cars.forEach(c => { if (c) c.isBot = false; });
-         // Input senden
-         netStartSending();
-         running = true;
-         lastT = performance.now();
-         requestAnimationFrame(loop);
-         updateChatVisibility();
-    }
-
-    function start(){
-        // bei lokalem Start ebenfalls Settings-Panel schließen
-        document.getElementById('settingsPanel')?.classList.remove('visible');
-        ui.style.display = 'none';
-        hud.hidden = false;
-        // Standardwerte wiederherstellen, falls Online-Overrides gesetzt wurden
-        Object.assign(CFG, CFG_DEFAULT);
-        reset(false);
-        // ensure any local countdown stops on fresh start
-        localCountdownActive = false;
-        localCountdown = 0;
-        running = true;
-        lastT = performance.now();
-        requestAnimationFrame(loop);
-        updateChatVisibility();
-    }
-
-    function checkGoals(){
-        const cy = canvas.height/2;
-        const halfG = CFG.goalWidth/2;
-
-        // left goal: ball must cross beyond left goal depth while inside mouth
-        const leftGoalLine = CFG.pad - CFG.goalDepth;
-        if (ball.pos.x + ball.r < leftGoalLine && Math.abs(ball.pos.y - cy) < halfG){
-            score[1]++;
-            s2El.textContent = score[1];
-            // local: start short countdown before kickoff (reduced to 1.5s)
-            if (mode !== 'online'){
-                localCountdown = 1.5;
-                localCountdownActive = true;
-            }
+    function handleGameMessage(msg){
+        if (msg.type === 'pong'){
+            const sent = (typeof msg.t === 'number') ? msg.t : NET.lastPingSentAt;
+            const rtt = performance.now() - sent;
+            NET.pingMs = rtt;
+            updatePingHud(rtt);
             return;
         }
 
-        // right goal
-        const rightGoalLine = canvas.width - (CFG.pad - CFG.goalDepth);
-        if (ball.pos.x - ball.r > rightGoalLine && Math.abs(ball.pos.y - cy) < halfG){
-            score[0]++;
-            s1El.textContent = score[0];
-            if (mode !== 'online'){
-                localCountdown = 1.5;
-                localCountdownActive = true;
+        if (msg.type === 'room_created'){
+            NET.roomMaxPlayers = msg.maxPlayers || 2;
+            expectedPlayers = NET.roomMaxPlayers;
+            NET.roomCode = msg.code;
+            NET.playerIndex = msg.playerIndex;
+            NET.lastState = null;
+            NET.seq = 0;
+            mode = 'online';
+            enterLobby();
+            netSetStatus('Host • Code ' + NET.roomCode);
+            if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
+        } else if (msg.type === 'join_ok'){
+            NET.roomMaxPlayers = msg.maxPlayers || 2;
+            expectedPlayers = NET.roomMaxPlayers;
+            NET.roomCode = msg.code;
+            NET.playerIndex = msg.playerIndex;
+            NET.lastState = null;
+            NET.seq = 0;
+            mode = 'online';
+            enterLobby();
+            netSetStatus('Joined • Code ' + NET.roomCode);
+            if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
+        } else if (msg.type === 'join_failed'){
+            netSetStatus('Join failed: ' + (msg.reason || 'unknown'));
+            leaveLobby();
+        } else if (msg.type === 'state'){
+            NET.lastState = msg;
+            NET.lastStateAt = performance.now();
+            if (msg.playerNames) NET.playerNames = msg.playerNames;
+            const lobbyEl = document.getElementById('lobby');
+            if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
+            if (msg.started) {
+                startOnline();
+                if (lobbyEl) lobbyEl.style.display = 'none';
             }
-            return;
+        } else if (msg.type === 'start'){
+            if (msg.cfgPartial) applyOnlineCfg(msg.cfgPartial);
+            startOnline();
+            const lobbyEl = document.getElementById('lobby');
+            if (lobbyEl) lobbyEl.style.display = 'none';
+        } else if (msg.type === 'player_joined' || msg.type === 'player_left'){
+            if (msg.playerNames) { NET.playerNames = msg.playerNames; }
+            const lobbyEl = document.getElementById('lobby');
+            if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
+        } else if (msg.type === 'countdown_start'){
+            NET.countdownStartAt = performance.now();
+            const lobbyEl = document.getElementById('lobby');
+            if (lobbyEl && lobbyEl.style.display === 'block') renderLobby();
+            showCountdown(3, 3, 'Spiel startet in');
+        } else if (msg.type === 'switch_failed'){
+            netSetStatus('Teamwechsel fehlgeschlagen: ' + (msg.reason || 'busy'));
+        } else if (msg.type === 'switch_ok'){
+            if (typeof msg.newIndex === 'number') NET.playerIndex = msg.newIndex;
+        } else if (msg.type === 'room_closed'){
+            netSetStatus('Room closed');
+            leaveLobby();
+        } else if (msg.type === 'chat_message'){
+            const nick = msg.nick || 'Player';
+            const text = msg.text || '';
+            addChatMessage(nick, text, 'message');
+        } else if (msg.type === 'chat_command'){
+            const nick = msg.nick || 'Player';
+            const text = msg.text || '';
+            addChatMessage(nick, text, 'command');
+        } else if (msg.type === 'chat_system'){
+            const text = msg.text || '';
+            addChatMessage('System', text, 'system');
+        } else if (msg.type === 'tournament_config'){
+            TOURN.enabled = true; TOURN.mode = msg.mode; TOURN.config = msg.config; TOURN.phase = msg.phase || 'Gruppenphase';
+            renderTournamentOverlay();
+        } else if (msg.type === 'tournament_state'){
+            TOURN.enabled = true; TOURN.phase = msg.phase || TOURN.phase; TOURN.groups = msg.groups || []; TOURN.bracket = msg.bracket || [];
+            renderTournamentOverlay();
+        } else if (msg.type === 'tournament_pause'){
+            TOURN.pauseUntil = performance.now() + 15000;
+            showCountdown(15, 15, 'Turnier-Pause');
+        } else if (msg.type === 'tournament_resume'){
+            TOURN.pauseUntil = 0; hideCountdown();
         }
     }
 
-    // ---------- Rendering ----------
-    function drawField(){
-        ctx.clearRect(0,0,canvas.width,canvas.height);
+    // ...existing code...
 
-        // vignette
-        ctx.globalAlpha = 0.22;
-        ctx.beginPath();
-        ctx.ellipse(canvas.width/2, canvas.height/2, canvas.width*0.56, canvas.height*0.64, 0, 0, Math.PI*2);
-        ctx.fillStyle = '#000';
-        ctx.fill();
-        ctx.globalAlpha = 1;
-
-        // borders
-        ctx.strokeStyle = getCss('--line');
-        ctx.lineWidth = 2;
-        ctx.strokeRect(CFG.pad, CFG.pad, canvas.width-2*CFG.pad, canvas.height-2*CFG.pad);
-
-        // midfield line
-        ctx.globalAlpha = 0.65;
-        ctx.beginPath();
-        ctx.moveTo(canvas.width/2, CFG.pad);
-        ctx.lineTo(canvas.width/2, canvas.height-CFG.pad);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-
-        // center circle
-        ctx.globalAlpha = 0.8;
-        ctx.beginPath();
-        ctx.arc(canvas.width/2, canvas.height/2, CFG.centerCircle, 0, Math.PI*2);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-
-        // goals
-        const cy = canvas.height/2;
-        ctx.globalAlpha = 0.95;
-        ctx.fillStyle = getCss('--blue');
-        ctx.fillRect(0, cy-CFG.goalWidth/2, CFG.pad-3, CFG.goalWidth);
-        ctx.fillStyle = getCss('--red');
-        ctx.fillRect(canvas.width-(CFG.pad-3), cy-CFG.goalWidth/2, CFG.pad-3, CFG.goalWidth);
-        ctx.globalAlpha = 1;
-
-        // goal depth markers
-        ctx.globalAlpha = 0.25;
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(CFG.pad-CFG.goalDepth, cy-CFG.goalWidth/2, 2, CFG.goalWidth);
-        ctx.fillRect(canvas.width-(CFG.pad-CFG.goalDepth), cy-CFG.goalWidth/2, 2, CFG.goalWidth);
-        ctx.globalAlpha = 1;
-    }
-
-    // ---------- Loop ----------
-    function step(dt){
-        if (mode === 'online'){
-            // Server-authoritative: nur State anwenden, keine lokale Physik/Goals
-            if (NET.lastState) applyServerState(NET.lastState);
-            return;
-        }
-
-        // Local countdown active -> pause physics until it runs out
-        if (localCountdownActive){
-            // inputs are ignored during countdown
-            return;
-        }
-
-        // input
-        cars[0].inputHuman(dt);
-        if (cars[1].isBot) cars[1].inputBot(ball, dt);
-        else cars[1].inputHuman(dt);
-
-        // integrate
-        cars.forEach(c => c.integrate(dt));
-        ball.integrate(dt);
-
-        // collisions
-        // car-car
-        resolveCircleCollision(cars[0], cars[1], 0.35);
-        // car-ball
-        resolveCircleCollision(cars[0], ball, CFG.restitution);
-        resolveCircleCollision(cars[1], ball, CFG.restitution);
-
-        checkGoals();
-    }
-
-    function loop(t){
-         if (!running) return;
-         const dt = clamp((t - lastT) / 1000, 0, 1/30);
-         lastT = t;
-
-         // If local countdown active, decrement timer here
-         if (localCountdownActive){
-             localCountdown -= dt;
-             if (localCountdown <= 0){
-                 localCountdownActive = false;
-                 localCountdown = 0;
-                 kickoff();
-             }
-         }
-
-         step(dt);
-
-         drawField();
-         ball.draw();
-         cars.forEach(c => c.draw());
-
-         // Namen anzeigen (lokal oder online)
-         if (mode === 'online'){
-             cars.forEach((car, idx) => {
-                 const name = NET.playerNames[idx] || ('Spieler ' + (idx+1));
-                 ctx.save();
-                 ctx.globalAlpha = 0.95;
-                 ctx.fillStyle = car.color;
-                 ctx.font = 'bold 13px system-ui';
-                 ctx.textAlign = 'center';
-                 ctx.fillText(name, car.pos.x, car.pos.y - car.r - 28);
-                 ctx.globalAlpha = 1;
-                 ctx.restore();
-             });
-         }
-
-         // Bot-Status im HUD anzeigen
-         if (botStateEl){
-             if (cars[1] && cars[1].isBot){
-                 const m = cars[1].ai?.mode || '';
-                 const e = Math.round(cars[1].energy);
-                 botStateEl.textContent = `Bot: ${botModeLabel(m)} · Energy: ${e}% · commit: ${(cars[1].ai.until.toFixed(3)-lastT.toFixed(3)).toFixed(1)}s`;
-             } else {
-                 botStateEl.textContent = '';
-             }
-         }
-
-         // Countdown Overlay aktualisieren
-         if (localCountdownActive){
-             // Lokales Spiel: lokale Countdown
-             updateCountdownRing(localCountdown);
-             showCountdown(localCountdown, 1.5, 'Weiter in');
-         } else if (mode === 'online' && NET.countdownStartAt !== null){
-             // Online Spiel: Client zählt runter basierend auf elapsed time
-             const elapsed = (performance.now() - NET.countdownStartAt) / 1000;
-             const remaining = Math.max(0, 3 - elapsed);
-             if (remaining > 0){
-                 updateCountdownRing(remaining);
-                 showCountdown(remaining, 3, 'Spiel startet in');
-             } else {
-                 // Countdown vorbei
-                 hideCountdown();
-                 NET.countdownStartAt = null;
-             }
-         } else {
-             // Kein Countdown aktiv
-             hideCountdown();
-         }
-
-         requestAnimationFrame(loop);
-    }
-
-
-
-    // Falls die Countdown-Helfer noch nicht definiert sind, definiere sie hier defensiv.
-    if (typeof window.showCountdown !== 'function'){
-        window.showCountdown = function(seconds, total=3, label=''){
-            const overlay = document.getElementById('countdownOverlay');
-            const ring = document.getElementById('countdownRing');
-            const inner = document.getElementById('countdownInner');
-            const lbl = document.getElementById('countdownLabel');
-            if (!overlay || !ring || !inner) return;
-            if (lbl && label) lbl.textContent = label;
-            const clamped = Math.max(0, seconds);
-            inner.textContent = Math.ceil(clamped);
-            window.updateCountdownRing(clamped, total);
-            overlay.classList.add('visible');
-        };
-    }
-    if (typeof window.hideCountdown !== 'function'){
-        window.hideCountdown = function(){
-            const overlay = document.getElementById('countdownOverlay');
-            if (overlay) overlay.classList.remove('visible');
-        };
-    }
-    if (typeof window.updateCountdownRing !== 'function'){
-        window.updateCountdownRing = function(seconds, total=3){
-            const ring = document.getElementById('countdownRing');
-            const inner = document.getElementById('countdownInner');
-            if (!ring || !inner) return;
-            const clamped = Math.max(0, Math.min(total, seconds));
-            const pct = 1 - clamped/total;
-            const deg = Math.max(0, Math.min(360, pct*360));
-            ring.style.background = `conic-gradient(${getCss('--blue')} ${deg}deg, rgba(255,255,255,0.06) ${deg}deg)`;
-            inner.textContent = Math.ceil(clamped);
-        };
-    }
-
-    // ---------- UI: Init zweistufige Auswahl ----------
-    function initUI(){
-         const show = id => { const e = document.getElementById(id); if (e) e.style.display = ''; updateSettingsVisibility(); };
-         const hide = id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; updateSettingsVisibility(); };
-
-         // Hauptwahl sichtbar, Panels versteckt (sicherstellen)
-         hide('localOptions'); hide('onlineOptions');
-
-         // Choice buttons
-         const bLocal = document.getElementById('btnLocalChoice');
-         const bOnline = document.getElementById('btnOnlineChoice');
-         if (bLocal) bLocal.addEventListener('click', () => { show('localOptions'); hide('onlineOptions'); });
-         if (bOnline) bOnline.addEventListener('click', () => { show('onlineOptions'); hide('localOptions'); });
-
-         // Local action buttons
-         const pvp = document.getElementById('pvp');
-         const pve = document.getElementById('pve');
-         if (pvp) pvp.addEventListener('click', () => { mode = 'pvp'; start(); });
-         if (pve) pve.addEventListener('click', () => { mode = 'pve'; start(); });
-
-         // Online Host / Join
-         const onHost = document.getElementById('onHost');
-         if (onHost) onHost.addEventListener('click', async () => {
-             try{
-                 const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
-                 await netConnect();
-                 const maxP = parseInt(document.getElementById('onVariant')?.value || '2', 10) || 2;
-                 expectedPlayers = maxP;
-                 // Advanced Settings mitsenden
-                 const settings = getCurrentSettings();
-                 wsSend({ type:'create_room', maxPlayers: maxP, playerName, settings });
-             }catch(e){ console.warn(e); }
-         });
-
-         const onJoin = document.getElementById('onJoin');
-         if (onJoin) onJoin.addEventListener('click', async () => {
-             const code = (document.getElementById('onCode')?.value || '').trim().toUpperCase();
-             if (!code){ netSetStatus('Code fehlt'); return; }
-             try{
-                 const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
-                 expectedPlayers = parseInt(document.getElementById('onVariant')?.value || '2',10) || 2;
-                 await netConnect();
-                 // Join sendet keine Settings (Host bestimmt), Server liefert cfgPartial zurück
-                 wsSend({ type:'join_room', code, playerName });
-             }catch(e){ console.warn(e); }
-         });
-
-         // initial einmal prüfen
-         updateSettingsVisibility();
-    }
-
-    // Hilfsfunktion: aktuelle Slider-Werte sammeln und als CFG-Overrides senden
-    function getCurrentSettings(){
-        // Prozentwerte 50..150 → Faktoren 0.5..1.5 oder direkte Werte je Key
-        const readPct = (id) => {
-            const el = document.getElementById('slider-' + id);
-            const v = el ? Number(el.value) : 100;
-            return clamp(v, 50, 150) / 100; // Faktor
-        };
-        // Host sendet nur nicht-feldbezogene Keys
-        return {
-            carAcc: CFG.carAcc * readPct('carAccel'),
-            carMaxSpeed: CFG.carMaxSpeed * readPct('carMaxV'),
-            carDrag: CFG.carDrag * readPct('carDrag'),
-            boostAccMul: CFG.boostAccMul * readPct('boostAccMul'),
-            boostMaxMul: CFG.boostMaxMul * 1, // Top-Speed Multiplikator eher stabil lassen → hier 100% (optional: readPct('boostAccMul') wenn gewünscht)
-            boostDrain: CFG.boostDrain * 1,   // Drain nicht zu stark ändern → hier 100% (oder eigener Slider)
-            boostRegen: CFG.boostRegen * readPct('boostRegen'),
-            ballDrag: CFG.ballDrag * readPct('ballDrag'),
-            wallRestitution: CFG.wallRestitution * readPct('wallBounce'),
-            kickImpulse: CFG.kickImpulse * readPct('kickImpulse'),
-        };
-    }
-
-    // Hilfsfunktion: Server-CFG (ohne Feld-Werte) lokal übernehmen für Anzeige/Kosmetik
-    function applyOnlineCfg(partial){
-        if (!partial || typeof partial !== 'object') return;
-        // Nur nicht-feldbezogene Werte übernehmen
-        if (partial.carAcc != null) CFG.carAcc = partial.carAcc;
-        if (partial.carMaxSpeed != null) CFG.carMaxSpeed = partial.carMaxSpeed;
-        if (partial.carDrag != null) CFG.carDrag = partial.carDrag;
-
-        if (partial.boostAccMul != null) CFG.boostAccMul = partial.boostAccMul;
-        if (partial.boostMaxMul != null) CFG.boostMaxMul = partial.boostMaxMul;
-        if (partial.boostDrain != null) CFG.boostDrain = partial.boostDrain;
-        if (partial.boostRegen != null) CFG.boostRegen = partial.boostRegen;
-
-        if (partial.ballDrag != null) CFG.ballDrag = partial.ballDrag;
-        if (partial.wallRestitution != null) CFG.wallRestitution = partial.wallRestitution;
-        if (partial.kickImpulse != null) CFG.kickImpulse = partial.kickImpulse;
-    }
-
-    // Einfaches Lobby-Rendering + Aktionen
-    function enterLobby(){
-        const l = document.getElementById('lobby');
-        if (!l) return;
-        l.style.display = 'block';
-        renderLobby();
-    }
-    function leaveLobby(){
-        const l = document.getElementById('lobby');
-        if (l) l.style.display = 'none';
-    }
-    function renderLobby(){
-        const lobbyEl = document.getElementById('lobby');
-        if (!lobbyEl || lobbyEl.style.display === 'none') return;
-
-        const slotsBlue = document.getElementById('slotsBlue');
-        const slotsRed  = document.getElementById('slotsRed');
-        const codeEl    = document.getElementById('lobbyCode');
-        if (codeEl) codeEl.textContent = NET.roomCode || '—';
-
-        const names = NET.playerNames || {};
-        const maxP  = NET.roomMaxPlayers || expectedPlayers || 2;
-        const mkSlot = (name, idx) => {
-            const div = document.createElement('div');
-            div.textContent = name || ('frei #' + (idx+1));
-            div.style.padding = '6px 8px';
-            div.style.borderRadius = '8px';
-            div.style.background = name ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)';
-            return div;
-        };
-
-        if (slotsBlue) slotsBlue.innerHTML = '';
-        if (slotsRed)  slotsRed.innerHTML  = '';
-
-        for (let i=0;i<maxP;i++){
-            const name = names[i] || '';
-            const isLeft = (i % 2 === 0);
-            (isLeft ? slotsBlue : slotsRed)?.appendChild(mkSlot(name, i));
-        }
-
-        const notice = document.getElementById('lobbyNotice');
-        if (notice){
-            const count = Object.values(names).filter(Boolean).length;
-            notice.textContent = (count >= maxP) ? 'Bereit – wartet auf Start' : `Warte auf Spieler… (${count}/${maxP})`;
-        }
-    }
-
-    // Teamwechsel-Buttons und Lobby-Verlassen
-    (function initLobbyActions(){
-        document.getElementById('joinBlue')?.addEventListener('click', () => wsSend({ type:'switch_team', side:'left' }));
-        document.getElementById('joinRed')?.addEventListener('click',  () => wsSend({ type:'switch_team', side:'right' }));
-        document.getElementById('lobbyLeave')?.addEventListener('click', () => { leaveLobby(); showMenu(); });
-        // Kopieren
-        document.getElementById('lobbyCopyBtn')?.addEventListener('click', async () => {
-            if (!NET.roomCode) return;
-            try{ await navigator.clipboard.writeText(NET.roomCode); }catch{}
-        });
-    })();
-
-    // ---------- UI: Init zweistufige Auswahl ----------
-    function initUI(){
-         const show = id => { const e = document.getElementById(id); if (e) e.style.display = ''; updateSettingsVisibility(); };
-         const hide = id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; updateSettingsVisibility(); };
-
-         // Hauptwahl sichtbar, Panels versteckt (sicherstellen)
-         hide('localOptions'); hide('onlineOptions');
-
-         // Choice buttons
-         const bLocal = document.getElementById('btnLocalChoice');
-         const bOnline = document.getElementById('btnOnlineChoice');
-         if (bLocal) bLocal.addEventListener('click', () => { show('localOptions'); hide('onlineOptions'); });
-         if (bOnline) bOnline.addEventListener('click', () => { show('onlineOptions'); hide('localOptions'); });
-
-         // Local action buttons
-         const pvp = document.getElementById('pvp');
-         const pve = document.getElementById('pve');
-         if (pvp) pvp.addEventListener('click', () => { mode = 'pvp'; start(); });
-         if (pve) pve.addEventListener('click', () => { mode = 'pve'; start(); });
-
-         // Online Host / Join
-         const onHost = document.getElementById('onHost');
-         if (onHost) onHost.addEventListener('click', async () => {
-             try{
-                 const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
-                 await netConnect();
-                 const maxP = parseInt(document.getElementById('onVariant')?.value || '2', 10) || 2;
-                 expectedPlayers = maxP;
-                 // Advanced Settings mitsenden
-                 const settings = getCurrentSettings();
-                 wsSend({ type:'create_room', maxPlayers: maxP, playerName, settings });
-             }catch(e){ console.warn(e); }
-         });
-
-         const onJoin = document.getElementById('onJoin');
-         if (onJoin) onJoin.addEventListener('click', async () => {
-             const code = (document.getElementById('onCode')?.value || '').trim().toUpperCase();
-             if (!code){ netSetStatus('Code fehlt'); return; }
-             try{
-                 const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
-                 expectedPlayers = parseInt(document.getElementById('onVariant')?.value || '2',10) || 2;
-                 await netConnect();
-                 // Join sendet keine Settings (Host bestimmt), Server liefert cfgPartial zurück
-                 wsSend({ type:'join_room', code, playerName });
-             }catch(e){ console.warn(e); }
-         });
-
-         // initial einmal prüfen
-         updateSettingsVisibility();
-    }
-
-
-    // Settings-Interaktionen initialisieren (Panel öffnen/schließen + Modal)
-    function initSliders(){
-        const btnSettings = document.getElementById('btnSettings');
-        const panel = document.getElementById('settingsPanel');
-        const closeHeader = document.getElementById('settingsClose');
-        const closeFooter = document.getElementById('settingsCloseFooter');
-
-        const manageBtn = document.getElementById('presetsManageBtn');
-        const presetModal = document.getElementById('presetModal');
-        const presetModalClose = document.getElementById('presetModalClose');
-        const presetModalX = presetModal ? presetModal.querySelector('.modal-close') : null;
-
-        // Panel öffnen/schließen
-        if (btnSettings && panel){
-            btnSettings.addEventListener('click', () => {
-                panel.classList.toggle('visible');
-            });
-        }
-        if (closeHeader && panel){
-            closeHeader.addEventListener('click', () => panel.classList.remove('visible'));
-        }
-        if (closeFooter && panel){
-            closeFooter.addEventListener('click', () => panel.classList.remove('visible'));
-        }
-
-        // Presets-Modal öffnen/schließen (falls vorhanden)
-        if (manageBtn && presetModal){
-            manageBtn.addEventListener('click', () => {
-                presetModal.classList.add('visible');
-            });
-        }
-        if (presetModalClose && presetModal){
-            presetModalClose.addEventListener('click', () => presetModal.classList.remove('visible'));
-        }
-        if (presetModalX && presetModal){
-            presetModalX.addEventListener('click', () => presetModal.classList.remove('visible'));
-        }
-        if (presetModal){
-            // Klick außerhalb schließt Modal
-            presetModal.addEventListener('click', (e) => {
-                if (e.target === presetModal) presetModal.classList.remove('visible');
-            });
-        }
-
-        // Panel beim Start automatisch schließen, ohne bestehende Funktionen zu ändern
-        document.addEventListener('game:start', () => {
-            panel?.classList.remove('visible');
-        });
-        document.addEventListener('game:startOnline', () => {
-            panel?.classList.remove('visible');
-        });
-    }
-
-    // Settings-Button nur anzeigen, wenn Local- oder Online-Optionen sichtbar sind
-    function updateSettingsVisibility(){
-        const btn = document.getElementById('btnSettings');
-        const lo = document.getElementById('localOptions');
-        const on = document.getElementById('onlineOptions');
-        if (!btn || !lo || !on) return;
-        const loComputed = getComputedStyle(lo).display !== 'none';
-        const onComputed = getComputedStyle(on).display !== 'none';
-        const visible = loComputed || onComputed;
-        btn.style.display = visible ? '' : 'none';
-    }
-
-    // Hook: nach Start-Buttons ein Custom-Event feuern, damit initSliders Panel schließen kann
-    (function hookStartClosePanel(){
-        const origStart = window.start;
-        const origStartOnline = window.startOnline;
-        if (typeof origStart === 'function'){
-            window.start = function(){
-                document.dispatchEvent(new Event('game:start'));
-                const result = origStart.apply(this, arguments);
-                updateChatVisibility();
-                return result;
-            };
-        }
-        if (typeof origStartOnline === 'function'){
-            window.startOnline = function(){
-                document.dispatchEvent(new Event('game:startOnline'));
-                const result = origStartOnline.apply(this, arguments);
-                updateChatVisibility();
-                return result;
-            };
-        }
-        // Patch showMenu to also update chat visibility
-        const origShowMenu = window.showMenu;
-        if (typeof origShowMenu === 'function'){
-            window.showMenu = function(){
-                const result = origShowMenu.apply(this, arguments);
-                updateChatVisibility();
-                return result;
-            };
-        }
-    })();
-
-    // Robuste Initialisierung nach DOM-Ready
-    (function safeInit(){
-        const run = () => {
-            try { initUI(); } catch(e){ console.error('initUI error', e); }
-            try { initSliders(); } catch(e){ console.error('initSliders error', e); }
-        };
-        if (document.readyState === 'loading'){
-            document.addEventListener('DOMContentLoaded', run, { once:true });
-        } else {
-            run();
-        }
-    })();
-
-    // Ping-Messung (Client)
-    // Ergänze Funktionen und Hooks, damit der Ping rechts oben angezeigt wird.
-    function updatePingHud(ms){
-        const el = document.getElementById('pingHud');
-        if (!el) return;
-        // Nur im Online-Modus sichtbar
-        if (mode === 'online' && NET.connected){
-            el.hidden = false;
-        } else {
-            el.hidden = true;
-            return;
-        }
-        const val = (typeof ms === 'number' && isFinite(ms)) ? Math.round(ms) : '—';
-        el.textContent = `Ping: ${val} ms`;
-        // Farbe je nach Qualität
-        let col = getCss('--text');
-        if (typeof ms === 'number'){
-            if (ms <= 50) col = getCss('--good');       // sehr gut: grün
-            else if (ms > 180) col = getCss('--red');   // schlecht: rot
-            else col = getCss('--text');                // okay: weiß
-        }
-        el.style.color = col || '#e5e7eb';
-    }
-
-    function startPingLoop(){
-        try{ if (NET.pingTimer) clearInterval(NET.pingTimer); }catch{}
-        NET.pingTimer = setInterval(() => {
-            if (mode !== 'online' || !NET.connected) return;
-            NET.lastPingSentAt = performance.now();
-            wsSend({ type:'ping', t: NET.lastPingSentAt });
-        }, 1000); // alle 1s
-        updatePingHud(NET.pingMs);
-    }
-
-    // Patch: starte Ping-Loop direkt in netConnect.onopen und verstecke HUD bei Disconnect/Menu
-    (function patchPingHooks(){
-        const origNetConnect = netConnect;
-        window.netConnect = function(){
-            return new Promise((resolve, reject) => {
-                const p = origNetConnect();
-                p.then(() => {
-                    // Nach erfolgreichem Verbindungsaufbau den Ping-Loop starten
-                    try{ startPingLoop(); }catch{}
-                    resolve();
-                }).catch(reject);
-            });
-        };
-
-        const origDisconnect = netDisconnect;
-        window.netDisconnect = function(){
-            try{ if (NET.pingTimer) clearInterval(NET.pingTimer); }catch{}
-            NET.pingTimer = null;
-            NET.pingMs = null;
-            updatePingHud(NET.pingMs);
-            return origDisconnect.apply(this, arguments);
-        };
-
-        const origShowMenu = showMenu;
-        window.showMenu = function(){
-            updatePingHud(null); // HUD ausblenden
-            return origShowMenu.apply(this, arguments);
-        };
-    })();
-</script>
-</body>
-</html>
