@@ -15,24 +15,23 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server });
 
 // ---------- Relay State ----------
-const instances = new Map(); // port -> { ws, online, timestamp, load }
+const instances = new Map(); // port -> { ws, online, timestamp, load, port }
 const tournaments = new Map(); // tournamentId -> { config, groups, bracket, instances, phase, created }
 const playerClients = new Map(); // playerId -> { ws, currentMatch, tournament }
+
+// NEU: Pending-Queues für wartende Clients (wenn keine Instanz online ist)
+const pendingCreates = []; // { ws, payload: { maxPlayers, playerName, settings } }
+const pendingJoins = [];   // { ws, payload: { code, playerName } }
 
 function send(ws, obj) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
 }
 
 function broadcast(obj) {
-  for (const inst of instances.values()) {
-    send(inst.ws, obj);
-  }
+  for (const inst of instances.values()) send(inst.ws, obj);
 }
-
 function broadcastToPlayers(obj) {
-  for (const player of playerClients.values()) {
-    send(player.ws, obj);
-  }
+  for (const player of playerClients.values()) send(player.ws, obj);
 }
 
 // ---------- Tournament Management ----------
@@ -123,10 +122,9 @@ function waitForInstanceReady(wsClient, desiredPort=null){
 
 // Hilfsfunktion: wähle aktive Instanz nach Last
 function pickActiveInstance(){
-  const arr = Array.from(instances.entries()).map(([port, inst]) => ({ port, inst }));
-  arr.sort((a,b) => a.inst.load - b.inst.load);
-  const actives = arr.filter(x => x.inst.online);
-  return actives.length ? actives[0] : null;
+  const arr = Array.from(instances.values()).filter(inst => inst.online);
+  arr.sort((a,b) => a.load - b.load);
+  return arr.length ? arr[0] : null;
 }
 
 // ---------- WebSocket Relay ----------
@@ -146,11 +144,34 @@ wss.on("connection", (ws) => {
         ws,
         online: true,
         timestamp: Date.now(),
-        load: 0
+        load: 0,
+        port: instancePort
       });
       console.log(`[Relay] Instance online: port ${instancePort}`);
       send(ws, { type: "relay_welcome", clientId, role: "instance" });
       broadcastToPlayers({ type: "instance_status", port: instancePort, status: "online" });
+
+      // Falls Pending-Requests existieren, sofort bedienen
+      while (pendingCreates.length > 0) {
+        const req = pendingCreates.shift();
+        send(req.ws, {
+          type: 'room_created',
+          gamePort: instancePort,
+          code: 'WAITING',
+          playerName: req.payload.playerName,
+          maxPlayers: req.payload.maxPlayers
+        });
+      }
+      while (pendingJoins.length > 0) {
+        const req = pendingJoins.shift();
+        send(req.ws, {
+          type: 'join_ok',
+          gamePort: instancePort,
+          code: req.payload.code,
+          playerName: req.payload.playerName,
+          maxPlayers: 2
+        });
+      }
       return;
     }
 
@@ -162,6 +183,27 @@ wss.on("connection", (ws) => {
         inst.timestamp = Date.now();
         instances.set(port, inst);
         console.log(`[Relay] Instance ready: port ${port}`);
+        // Bediene Pending-Queues
+        while (pendingCreates.length > 0) {
+          const req = pendingCreates.shift();
+          send(req.ws, {
+            type: 'room_created',
+            gamePort: port,
+            code: 'WAITING',
+            playerName: req.payload.playerName,
+            maxPlayers: req.payload.maxPlayers
+          });
+        }
+        while (pendingJoins.length > 0) {
+          const req = pendingJoins.shift();
+          send(req.ws, {
+            type: 'join_ok',
+            gamePort: port,
+            code: req.payload.code,
+            playerName: req.payload.playerName,
+            maxPlayers: 2
+          });
+        }
       }
       return;
     }
@@ -200,11 +242,7 @@ wss.on("connection", (ws) => {
     // ====== PLAYER/CLIENT MESSAGES ======
     if (msg.type === "player_connect") {
       playerId = msg.playerId || clientId;
-      playerClients.set(playerId, {
-        ws,
-        currentMatch: null,
-        tournament: null
-      });
+      playerClients.set(playerId, { ws, currentMatch: null, tournament: null });
       console.log(`[Relay] Player connected: ${playerId}`);
       send(ws, { type: "relay_welcome", clientId, role: "player" });
       return;
@@ -367,11 +405,17 @@ wss.on("connection", (ws) => {
   });
 });
 
-// Heartbeat
+// Hilfsfunktion: simple clamp für Zahlen
+function clampNum(v, a, b){
+  const n = Number(v);
+  if (Number.isFinite(n)) return Math.max(a, Math.min(b, n));
+  return a;
+}
+
+// Heartbeat / Status-Logs (unverändert)
 setInterval(() => {
   const now = Date.now();
   const timeout = 30000;
-
   for (const [port, inst] of instances.entries()) {
     if (now - inst.timestamp > timeout) {
       console.log(`[Relay] Instance timeout: port ${port}`);
@@ -381,7 +425,6 @@ setInterval(() => {
   }
 }, 10000);
 
-// Status-Logs
 setInterval(() => {
   console.log(`[Relay] Status: ${instances.size} instances, ${playerClients.size} players, ${tournaments.size} tournaments`);
 }, 60000);
