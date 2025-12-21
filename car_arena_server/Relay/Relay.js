@@ -3,6 +3,9 @@ import { WebSocketServer } from "ws";
 import https from "https";
 
 const PORT = process.env.PORT || 8081;
+// Öffentliche WS-URL der Match-Instanz (Railway-Domain des Match-Services)
+const MATCH_WS_URL = process.env.MATCH_WS_URL || "wss://cararena-match.up.railway.app";
+
 // Provider-Webhook (z. B. zum Aufwecken/Starten der Instanz)
 // Trage hier deine Wake-URL ein (https://...):
 const PROVIDER_WAKE_URL = process.env.PROVIDER_WAKE_URL || "https://cararena-production.up.railway.app"; // z. B. Railway/Render/CloudRun Trigger
@@ -35,16 +38,16 @@ function broadcastToPlayers(obj) {
 }
 
 // Hilfsfunktion: weise wartende Clients einer Instanz zu
-function flushPendingToInstance(port, host){
+function flushPendingToInstance(port){
   if (!port) return;
-  const hostToUse = host || 'cararena-production.up.railway.app'; // Railway Domain statt localhost
+  const wsUrl = MATCH_WS_URL; // feste öffentliche URL zur Match-Instanz
   while (pendingCreates.length){
     const req = pendingCreates.shift();
-    send(req.ws, { type:'assign_instance', port, wsUrl: `wss://${hostToUse}`, kind:'host' });
+    send(req.ws, { type:'assign_instance', port, wsUrl, kind:'host' });
   }
   while (pendingJoins.length){
     const req = pendingJoins.shift();
-    send(req.ws, { type:'assign_instance', port, wsUrl: `wss://${hostToUse}`, kind:'join' });
+    send(req.ws, { type:'assign_instance', port, wsUrl, kind:'join' });
   }
 }
 
@@ -169,7 +172,7 @@ wss.on("connection", (ws, req) => {
       send(ws, { type: "relay_welcome", clientId, role: "instance" });
 
       // Pending-Clients jetzt zuweisen
-      flushPendingToInstance(instancePort, instances.get(instancePort)?.host);
+      flushPendingToInstance(instancePort);
       return;
     }
 
@@ -182,7 +185,7 @@ wss.on("connection", (ws, req) => {
         instances.set(port, inst);
         console.log(`[Relay] Instance ready: port ${port}`);
         // Pending-Clients jetzt zuweisen
-        flushPendingToInstance(port, inst.host);
+        flushPendingToInstance(port);
       }
       return;
     }
@@ -298,17 +301,12 @@ wss.on("connection", (ws, req) => {
       const pick = pickActiveInstance();
       console.log(`[Relay] create_game_room: ${pick ? `Found instance ${pick.port}` : 'No instances available'}`);
       if (pick){
-        const wsUrl = `wss://cararena-production.up.railway.app`; // Railway statt localhost:port
-        console.log(`[Relay] Assigning host to ${wsUrl}`);
-        send(ws, { type:'assign_instance', port: pick.port, wsUrl, kind:'host' });
+        send(ws, { type:'assign_instance', port: pick.port, wsUrl: MATCH_WS_URL, kind:'host' });
         return;
       }
-      console.log(`[Relay] No instance online, triggering wake...`);
       send(ws, { type:'assign_pending' });
       pendingCreates.push({ ws, payload: { maxPlayers: msg.maxPlayers, playerName: msg.playerName, settings: msg.settings }});
-      triggerWakeProvider().then((success)=>{
-        console.log(`[Relay] Wake provider ${success ? 'succeeded' : 'failed'}`);
-      });
+      triggerWakeProvider().then(()=>{ /* warten auf instance_ready */ });
       return;
     }
 
@@ -316,17 +314,12 @@ wss.on("connection", (ws, req) => {
       const pick = pickActiveInstance();
       console.log(`[Relay] join_game_room: ${pick ? `Found instance ${pick.port}` : 'No instances available'}`);
       if (pick){
-        const wsUrl = `wss://cararena-production.up.railway.app`; // Railway statt localhost:port
-        console.log(`[Relay] Assigning join to ${wsUrl}`);
-        send(ws, { type:'assign_instance', port: pick.port, wsUrl, kind:'join' });
+        send(ws, { type:'assign_instance', port: pick.port, wsUrl: MATCH_WS_URL, kind:'join' });
         return;
       }
-      console.log(`[Relay] No instance online, triggering wake...`);
       send(ws, { type:'assign_pending' });
       pendingJoins.push({ ws, payload: { code: msg.code, playerName: msg.playerName }});
-      triggerWakeProvider().then((success)=>{
-        console.log(`[Relay] Wake provider ${success ? 'succeeded' : 'failed'}`);
-      });
+      triggerWakeProvider().then(()=>{ /* warten auf instance_ready */ });
       return;
     }
 
