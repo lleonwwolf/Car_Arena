@@ -339,6 +339,7 @@ function stepRoom(room, dt){
 
 function snapshot(room){
   // back to full precision for smooth gameplay
+  // WICHTIG: cfgPartial NICHT mehr senden – nur beim Start
   return {
     type: "state",
     t: nowMs(),
@@ -349,19 +350,6 @@ function snapshot(room){
     energy: room.energy,
     started: room.started,
     countdown: room.countdownRemaining,
-    // Server teilt die verwendeten nicht-Feld-CFG mit (Clients können kosmetisch angleichen)
-    cfgPartial: {
-      carAcc: room.cfg.carAccel,
-      carMaxSpeed: room.cfg.carMaxV,
-      carDrag: room.cfg.carDrag,
-      boostAccMul: room.cfg.boostAccelMul,
-      boostMaxMul: room.cfg.boostMaxMul,
-      boostDrain: room.cfg.boostDrain,
-      boostRegen: room.cfg.boostRegen,
-      ballDrag: room.cfg.ballDrag,
-      wallRestitution: room.cfg.wallBounce,
-      kickImpulse: room.cfg.kick
-    }
   };
 }
 
@@ -570,9 +558,11 @@ function tryStartCountdown(room){
     if (!room.playerNames[i] || room.playerNames[i].trim() === '') { allPresent = false; break; }
   }
   if (!allPresent) return;
+  // Countdown starten: Server sendet einmalig die Nachricht
   room.countdownRemaining = 3;
   room.countdownLastTick = nowMs();
-  broadcastRoom(room, { type:'countdown', remaining: room.countdownRemaining });
+  // Sende nur EINMAL countdown_start – Client zählt dann lokal runter
+  broadcastRoom(room, { type:'countdown_start', remaining: 3 });
 }
 
 // heartbeat
@@ -592,23 +582,16 @@ setInterval(() => {
   last = t;
 
   for (const room of rooms.values()){
-    // handle countdown timing (server-side)
+    // handle countdown timing (server-side) – nur zur Kontrolle
     if (!room.started && room.countdownRemaining > 0){
       const elapsed = t - room.countdownLastTick;
-      if (elapsed >= 1000){
-        // reduce by number of full seconds
-        const steps = Math.floor(elapsed / 1000);
-        room.countdownRemaining = Math.max(0, room.countdownRemaining - steps);
-        room.countdownLastTick += steps * 1000;
-        // broadcast update
-        broadcastRoom(room, { type:'countdown', remaining: room.countdownRemaining });
-        if (room.countdownRemaining === 0){
-          // start match
-          room.started = true;
-          resetKickoff(room); // place cars/ball for kickoff
-          // inform clients
-          broadcastRoom(room, { type:'start' });
-        }
+      if (elapsed >= 3000){
+        // 3 Sekunden vorbei: starte Match
+        room.countdownRemaining = 0;
+        room.started = true;
+        resetKickoff(room); // place cars/ball for kickoff
+        // Sende Start-Signal
+        broadcastRoom(room, { type:'start' });
       }
     }
 
