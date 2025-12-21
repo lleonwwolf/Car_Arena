@@ -190,6 +190,20 @@ wss.on("connection", (ws, req) => {
       return;
     }
 
+    // NEU: Heartbeat von Match-Instanz – Zeitstempel aktualisieren, Timeout verhindern
+    if (msg.type === "instance_heartbeat") {
+      const port = msg.port;
+      const inst = instances.get(port);
+      if (inst) {
+        inst.timestamp = Date.now();
+        inst.online = true;
+        instances.set(port, inst);
+        // optional: Load bleibt unberührt
+        // console.log(`[Relay] Heartbeat from instance ${port}`);
+      }
+      return;
+    }
+
     if (msg.type === "match_finished") {
       // Instanz teilt mit: Match ist vorbei, Ergebnis: msg.matchId, msg.score
       const tournId = msg.tournamentId;
@@ -392,7 +406,7 @@ setInterval(() => {
 // Heartbeat / Status-Logs
 setInterval(() => {
   const now = Date.now();
-  const timeout = 60000; // 60 Sekunden Timeout
+  const timeout = 300000; // 5 Minuten Timeout für Instanzen
   for (const [port, inst] of instances.entries()) {
     if (now - inst.timestamp > timeout) {
       console.log(`[Relay] Instance timeout: port ${port}`);

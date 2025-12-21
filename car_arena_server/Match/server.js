@@ -780,6 +780,13 @@ async function setupRelay(){
   }
 })();
 
+// Server → Relay Heartbeat (Instanz bleibt „online“)
+setInterval(() => {
+  if (relayConnected) {
+    relaySend({ type:'instance_heartbeat', port: PORT, ts: nowMs() });
+  }
+}, 20000);
+
 // heartbeat
 setInterval(() => {
   for (const ws of wss.clients){
