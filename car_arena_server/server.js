@@ -333,7 +333,8 @@ function stepRoom(room, dt){
     room.started = false;
     room.countdownRemaining = 3;
     room.countdownLastTick = nowMs();
-    broadcastRoom(room, { type:'countdown', remaining: room.countdownRemaining });
+    // Sende countdown_start statt countdown (damit Client lokal runterzählt)
+    broadcastRoom(room, { type:'countdown_start', remaining: 3 });
   }
 }
 
@@ -519,6 +520,48 @@ wss.on("connection", (ws) => {
       tryStartCountdown(room);
       return;
     }
+
+    if (msg.type === "chat_message"){
+      const code = ws.roomCode;
+      if (!code) return;
+      const room = rooms.get(code);
+      if (!room) return;
+
+      const idx = ws.playerIndex;
+      const nick = (idx !== null && room.playerNames[idx]) ? room.playerNames[idx] : 'Player';
+      const text = (msg.text || '').slice(0, 120).trim();
+      if (!text) return;
+
+      // Broadcaste an alle im Raum
+      broadcastRoom(room, {
+        type: 'chat_message',
+        nick,
+        text
+      });
+      return;
+    }
+
+    if (msg.type === "chat_command"){
+      const code = ws.roomCode;
+      if (!code) return;
+      const room = rooms.get(code);
+      if (!room) return;
+
+      const idx = ws.playerIndex;
+      const nick = (idx !== null && room.playerNames[idx]) ? room.playerNames[idx] : 'Player';
+      const text = (msg.text || '').slice(0, 120).trim();
+      if (!text) return;
+
+      // Broadcaste Befehl an alle
+      broadcastRoom(room, {
+        type: 'chat_command',
+        nick,
+        text
+      });
+      // Implementierung der Befehle folgt später
+      return;
+    }
+
   });
 
   ws.on("close", () => {
