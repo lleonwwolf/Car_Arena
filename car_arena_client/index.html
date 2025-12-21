@@ -228,6 +228,20 @@
         }
         .preset-item .name{ flex:1; font-weight:600; color:var(--text); }
         .preset-item button{ flex:0; padding:6px 8px; font-size:12px; width:auto; box-shadow: var(--shadow-s); }
+
+        #pingHud{
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            z-index: 10020;
+            padding: 6px 10px;
+            border-radius: 12px;
+            background: rgba(2,6,23,.55);
+            border: 1px solid rgba(36, 50, 68, 0.2);
+            color: var(--text);
+            font-size: 13px;
+            box-shadow: var(--shadow-m);
+        }
     </style>
 </head>
 <body>
@@ -422,6 +436,7 @@
     </div>
 </div>
 
+<div id="pingHud" hidden>Ping: —</div>
 <canvas id="game" width="960" height="540"></canvas>
 
 <script>
@@ -474,6 +489,9 @@
         botStrafe: 0.18,       // small sideways movement so it doesn't beeline
         botBoostDist: 160,
     };
+    // Standard-CFG sichern, um lokale Spiele nicht durch Online-Overrides zu beeinflussen
+    const CFG_DEFAULT = JSON.parse(JSON.stringify(CFG));
+
     // ---------- Online (Server-Authoritative via WebSocket) ----------
     // Trage hier deine Render-URL ein (wss://...):
     const WS_URL = "wss://cararena-production.up.railway.app/";
@@ -488,6 +506,9 @@
         sendTimer: null,
         seq: 0,
         playerNames: {},  // { 0: "Name1", 1: "Name2", ... }
+        pingTimer: null,
+        lastPingSentAt: 0,
+        pingMs: null,
     };
 
     // client-seitige Erwartung (für Anzeige bevor Server bestätigt)
@@ -517,6 +538,10 @@
         NET.lastState = null;
         NET.roomCode = "";
         NET.playerIndex = null;
+        try{ if (NET.pingTimer) clearInterval(NET.pingTimer); }catch{}
+        NET.pingTimer = null;
+        NET.pingMs = null;
+        updatePingHud(NET.pingMs);
         if (NET.ws){
             try{ NET.ws.close(); }catch{}
         }
@@ -554,6 +579,15 @@
             ws.onmessage = (ev) => {
                 let msg;
                 try{ msg = JSON.parse(ev.data); }catch{ return; }
+
+                if (msg.type === 'pong'){
+                    // Roundtrip berechnen
+                    const sent = (typeof msg.t === 'number') ? msg.t : NET.lastPingSentAt;
+                    const rtt = performance.now() - sent;
+                    NET.pingMs = rtt;
+                    updatePingHud(rtt);
+                    return;
+                }
 
                 if (msg.type === 'room_created'){
                     NET.roomMaxPlayers = msg.maxPlayers || 2;
@@ -1298,6 +1332,8 @@
         document.getElementById('settingsPanel')?.classList.remove('visible');
         ui.style.display = 'none';
         hud.hidden = false;
+        // Standardwerte wiederherstellen, falls Online-Overrides gesetzt wurden
+        Object.assign(CFG, CFG_DEFAULT);
         reset(false);
         // ensure any local countdown stops on fresh start
         localCountdownActive = false;
@@ -1485,6 +1521,40 @@
     }
 
 
+
+    // Falls die Countdown-Helfer noch nicht definiert sind, definiere sie hier defensiv.
+    if (typeof window.showCountdown !== 'function'){
+        window.showCountdown = function(seconds, total=3, label=''){
+            const overlay = document.getElementById('countdownOverlay');
+            const ring = document.getElementById('countdownRing');
+            const inner = document.getElementById('countdownInner');
+            const lbl = document.getElementById('countdownLabel');
+            if (!overlay || !ring || !inner) return;
+            if (lbl && label) lbl.textContent = label;
+            const clamped = Math.max(0, seconds);
+            inner.textContent = Math.ceil(clamped);
+            window.updateCountdownRing(clamped, total);
+            overlay.classList.add('visible');
+        };
+    }
+    if (typeof window.hideCountdown !== 'function'){
+        window.hideCountdown = function(){
+            const overlay = document.getElementById('countdownOverlay');
+            if (overlay) overlay.classList.remove('visible');
+        };
+    }
+    if (typeof window.updateCountdownRing !== 'function'){
+        window.updateCountdownRing = function(seconds, total=3){
+            const ring = document.getElementById('countdownRing');
+            const inner = document.getElementById('countdownInner');
+            if (!ring || !inner) return;
+            const clamped = Math.max(0, Math.min(total, seconds));
+            const pct = 1 - clamped/total;
+            const deg = Math.max(0, Math.min(360, pct*360));
+            ring.style.background = `conic-gradient(${getCss('--blue')} ${deg}deg, rgba(255,255,255,0.06) ${deg}deg)`;
+            inner.textContent = Math.ceil(clamped);
+        };
+    }
 
     // ---------- UI: Init zweistufige Auswahl ----------
     function initUI(){
