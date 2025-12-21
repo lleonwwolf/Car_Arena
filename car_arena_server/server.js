@@ -43,30 +43,30 @@ function nowMs(){ return Date.now(); }
 
 // ---------- Game config (server truth) ----------
 const CFG = {
-
-  carR: 18,
-  ballR: 16,
+  carR: 16,
+  ballR: 11,
 
   w: 960,
   h: 540,
   pad: 44,
 
-  carAccel: 0.62,
-  carMaxV: 8.0,
-  carDrag: 0.90,
+  // Bewegung (Client-Einheiten: px/s)
+  carAccel: 1750,       // px/s² (war 0.62)
+  carMaxV: 395,         // px/s (war 8.0)
+  carDrag: 6.4,         // linear drag (war 0.90)
 
-  // boost
-  boostAccelMul: 1.75,
-  boostMaxMul: 1.35,
-  boostDrain: 65,   // energy per second
-  boostRegen: 38,   // energy per second
+  // Boost
+  boostAccelMul: 2.1,   // (war 1.75)
+  boostMaxMul: 1.75,    // (war 1.35)
+  boostDrain: 50,       // energy per second (war 65)
+  boostRegen: 32,       // energy per second (war 38)
 
-  ballDrag: 0.985,
-  wallBounce: 0.92,
+  ballDrag: 0.95,       // (war 0.985)
+  wallBounce: 0.86,     // (war 0.92)
 
-  kick: 0.75, // impulse scale on car-ball collision
+  kick: 340,            // impulse scale (war 0.75)
   tickHz: 60,
-  snapHz: 60, // back to 60 for smooth gameplay
+  snapHz: 60,
 
   goalW: 22,
   goalH: 140
@@ -212,12 +212,11 @@ function goalCheck(room){
 }
 
 function stepRoom(room, dt){
-  dt = clamp(dt, 0, 1/30); // safety
+  dt = clamp(dt, 0, 1/30);
 
-  // Kurz-Referenz
   const RC = room.cfg;
 
-  // cars from inputs (variable count)
+  // cars from inputs
   for (let i=0;i<room.maxPlayers;i++){
     const car = room.car[i];
     const inp = room.input[i] || { up:false, down:false, left:false, right:false, boost:false };
@@ -243,14 +242,17 @@ function stepRoom(room, dt){
       room.energy[i] = Math.min(100, room.energy[i] + RC.boostRegen * dt);
     }
 
-    if (a.len() > 0) a.norm().mul(accel);
+    if (a.len() > 0) a.norm().mul(accel * dt); // accel * dt für px/s²
 
     car.v.add(a);
 
     const sp = car.v.len();
     if (sp > maxV) car.v.mul(maxV / sp);
-    car.v.mul(RC.carDrag);
-    car.p.add(car.v.clone().mul(dt * CFG.tickHz));
+
+    // Drag: exponential statt multiplikativ (Client nutzt exp)
+    car.v.mul(Math.exp(-RC.carDrag * dt));
+
+    car.p.add(car.v.clone().mul(dt)); // ohne tickHz multiplier
   }
 
   // bounds enforcement (nutzt Feld-Werte aus global CFG)
@@ -268,8 +270,8 @@ function stepRoom(room, dt){
 
   // ball
   const ball = room.ball;
-  ball.v.mul(RC.ballDrag);
-  ball.p.add(ball.v.clone().mul(dt * CFG.tickHz));
+  ball.v.mul(RC.ballDrag); // kein exp hier (Client nutzt auch einfach mul)
+  ball.p.add(ball.v.clone().mul(dt));
 
   // wall bounce (ball) – Feld-Werte bleiben global
   const minX = CFG.pad + CFG.ballR;
