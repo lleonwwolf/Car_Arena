@@ -690,14 +690,12 @@ function relaySend(obj){
 async function setupRelay(){
   if (!RELAY_URL) return;
   console.log(`[Server] Connecting to Relay: ${RELAY_URL}`);
-   relay = new (await import('ws')).WebSocket(RELAY_URL);
+  relay = new (await import('ws')).WebSocket(RELAY_URL);
 
   relay.on('open', () => {
      relayConnected = true;
-     // Melde diese Instanz beim Relay an
-    console.log(`[Server] Connected to Relay, registering on port ${PORT}`);
+     console.log(`[Server] Connected to Relay, registering on port ${PORT}`);
      relaySend({ type:'instance_online', port: PORT });
-     // Kurz danach: instance_ready (damit Relay Pending-Clients zuweisen kann)
      setTimeout(() => {
        relaySend({ type:'instance_ready', port: PORT, ts: nowMs() });
        console.log(`[Server] Sent instance_ready on port ${PORT}`);
@@ -712,7 +710,6 @@ async function setupRelay(){
   relay.on('close', () => {
     console.log('[Server] Relay connection closed, attempting reconnect in 5s...');
     relayConnected = false;
-    // Versuche Reconnect nach 5 Sekunden
     if (!relayReconnectTimer) {
       relayReconnectTimer = setTimeout(() => {
         console.log('[Server] Attempting Relay reconnect...');
@@ -729,28 +726,24 @@ async function setupRelay(){
   relay.on('message', (ev) => {
      let msg; try{ msg = JSON.parse(ev.data); }catch{ return; }
 
-     // Relay weist ein Tournament-Match zu
      if (msg.type === 'tournament_match_assign'){
        const tournId = msg.tournamentId;
        const matchId = msg.matchId;
        const maxP = clamp(msg.maxPlayers || 2, 2, 4);
        const room = createRoom(maxP, msg.settings || null);
 
-       // Speichere Tournament-Info
        room.tournamentInfo = {
          id: tournId,
          matchId: matchId,
          relayConnected: true
        };
 
-       // Spieler-Namen setzen
        if (Array.isArray(msg.playerNames)){
          for (let i=0;i<Math.min(msg.playerNames.length, room.maxPlayers); i++){
            room.playerNames[i] = String(msg.playerNames[i] || '').slice(0,20);
          }
        }
 
-       // Tournament-Konfig
        if (msg.tournament && typeof msg.tournament === 'object'){
          room.tournament.enabled = true;
          room.tournament.mode = msg.tournament.mode;
@@ -765,25 +758,16 @@ async function setupRelay(){
   });
 }
 
-// Setup Relay beim Start
-(async ()=>{
-  try{
-    await setupRelay();
-  }catch(e){
-    console.warn('[Server] Relay setup failed:', e.message);
-    // Retry nach 10 Sekunden
-    setTimeout(() => {
-      console.log('[Server] Retrying Relay setup...');
-      setupRelay();
-    }, 10000);
-  }
-})();
+// Setup Relay sofort beim Start – NICHT blockieren, läuft im Hintergrund
+setupRelay().catch(e => {
+  console.warn('[Server] Initial Relay setup error:', e.message);
+  // Retry-Loop läuft über den close-Handler
+});
 
 // Server → Relay Heartbeat (Instanz bleibt „online")
 setInterval(() => {
   if (relayConnected) {
     relaySend({ type:'instance_heartbeat', port: PORT, ts: nowMs() });
-    console.log('[Server] Heartbeat sent to Relay');
   }
 }, 20000);
 
@@ -853,8 +837,6 @@ setInterval(() => {
 
 server.listen(PORT, () => {
   console.log("Server on", PORT);
-  // Starte Relay-Setup (falls nicht bereits geschehen)
-  // Setup läuft async im Hintergrund, blockiert den Server nicht
 });
 
 // NEU: Cleanup alte/leere Räume (alle 2 Min)
