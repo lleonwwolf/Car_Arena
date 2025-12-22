@@ -653,7 +653,9 @@ wss.on("connection", (ws) => {
       room.countdownRemaining = 0;
       broadcastRoom(room, { type:'countdown_cancelled' });
     }
-    if (room.clients.size === 0) rooms.delete(code);
+
+    // Lösche Raum NICHT sofort – nur wenn wirklich alle weg sind (nach Timeout)
+    // if (room.clients.size === 0) rooms.delete(code);
   });
 });
 
@@ -861,3 +863,18 @@ server.listen(PORT, () => {
     }
   }, 2000);
  });
+
+// NEU: Cleanup alte/leere Räume (alle 2 Min)
+setInterval(() => {
+  const now = Date.now();
+  const maxAge = 10 * 60 * 1000; // 10 Minuten Raum-Alter
+
+  for (const [code, room] of rooms.entries()) {
+    // Lösche nur, wenn Raum alt UND leer
+    if (room.clients.size === 0 && (now - room.createdAt) > maxAge) {
+      console.log(`[Server] Cleaning up old empty room: ${code}`);
+      rooms.delete(code);
+    }
+  }
+}, 120000);
+
