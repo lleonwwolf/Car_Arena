@@ -4,13 +4,9 @@
   "type": "module",
   "main": "Relay.js",
   "scripts": {
-    "start": "node Relay.js",
-    "dev": "node Relay.js"
+    "start": "node Relay.js"
   },
   "dependencies": {
     "ws": "^8.18.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
   }
 }
