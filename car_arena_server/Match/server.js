@@ -697,9 +697,11 @@ async function setupRelay(){
      // Melde diese Instanz beim Relay an
     console.log(`[Server] Connected to Relay, registering on port ${PORT}`);
      relaySend({ type:'instance_online', port: PORT });
-     // NEU: Instanz ist bereit (nach Kaltstart/Standby-Wake)
-     relaySend({ type:'instance_ready', port: PORT, ts: nowMs() });
-     console.log(`[Server] Registered with Relay on port ${PORT}`);
+     // Kurz danach: instance_ready (damit Relay Pending-Clients zuweisen kann)
+     setTimeout(() => {
+       relaySend({ type:'instance_ready', port: PORT, ts: nowMs() });
+       console.log(`[Server] Sent instance_ready on port ${PORT}`);
+     }, 100);
 
     if (relayReconnectTimer) {
       clearTimeout(relayReconnectTimer);
@@ -708,7 +710,7 @@ async function setupRelay(){
   });
 
   relay.on('close', () => {
-    console.log('[Server] Relay connection closed');
+    console.log('[Server] Relay connection closed, attempting reconnect in 5s...');
     relayConnected = false;
     // Versuche Reconnect nach 5 Sekunden
     if (!relayReconnectTimer) {
@@ -726,11 +728,6 @@ async function setupRelay(){
 
   relay.on('message', (ev) => {
      let msg; try{ msg = JSON.parse(ev.data); }catch{ return; }
-
-    if (msg.type === 'relay_welcome'){
-      console.log('[Server] Relay welcome received:', msg);
-      return;
-    }
 
      // Relay weist ein Tournament-Match zu
      if (msg.type === 'tournament_match_assign'){
@@ -782,10 +779,11 @@ async function setupRelay(){
   }
 })();
 
-// Server → Relay Heartbeat (Instanz bleibt „online“)
+// Server → Relay Heartbeat (Instanz bleibt „online")
 setInterval(() => {
   if (relayConnected) {
     relaySend({ type:'instance_heartbeat', port: PORT, ts: nowMs() });
+    console.log('[Server] Heartbeat sent to Relay');
   }
 }, 20000);
 
@@ -855,14 +853,9 @@ setInterval(() => {
 
 server.listen(PORT, () => {
   console.log("Server on", PORT);
-  // NEU: Falls Relay bereits verbunden, Instanz als bereit markieren
-  setTimeout(() => {
-    if (relayConnected) {
-      console.log('[Server] Sending instance_ready after startup');
-      relaySend({ type:'instance_ready', port: PORT, ts: nowMs() });
-    }
-  }, 2000);
- });
+  // Starte Relay-Setup (falls nicht bereits geschehen)
+  // Setup läuft async im Hintergrund, blockiert den Server nicht
+});
 
 // NEU: Cleanup alte/leere Räume (alle 2 Min)
 setInterval(() => {

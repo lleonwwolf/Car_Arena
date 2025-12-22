@@ -169,7 +169,7 @@ wss.on("connection", (ws, req) => {
         host: ws._host
       });
       console.log(`[Relay] Instance online: port ${instancePort}`);
-      send(ws, { type: "relay_welcome", clientId, role: "instance" });
+      // Keine Bestätigung nötig – Instanz läuft einfach weiter
 
       // Pending-Clients jetzt zuweisen
       flushPendingToInstance(instancePort);
