@@ -1,5 +1,5 @@
 import http from "http";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, WebSocket } from "ws";
 
 const PORT = process.env.PORT || 8080;
 
@@ -682,17 +682,19 @@ const RELAY_URL = process.env.RELAY_URL || "wss://cararena-relay.up.railway.app/
 let relay = null;
 let relayConnected = false;
 let relayReconnectTimer = null;
+let relaySetupAttempted = false;
 
 function relaySend(obj){
   try { if (relay && relayConnected) relay.send(JSON.stringify(obj)); } catch {}
 }
 
-async function setupRelay(){
-  if (!RELAY_URL) return;
+function setupRelay(){
+  if (!RELAY_URL || relaySetupAttempted) return;
+  relaySetupAttempted = true;
+
   console.log(`[Server] Connecting to Relay: ${RELAY_URL}`);
   try {
-    const ws = await import('ws');
-    relay = new ws.WebSocket(RELAY_URL);
+    relay = new WebSocket(RELAY_URL);
 
     relay.on('open', () => {
        relayConnected = true;
@@ -710,12 +712,13 @@ async function setupRelay(){
     });
 
     relay.on('close', () => {
-      console.log('[Server] Relay connection closed, attempting reconnect in 5s...');
+      console.log('[Server] Relay connection closed, will retry...');
       relayConnected = false;
+      relaySetupAttempted = false;
       if (!relayReconnectTimer) {
         relayReconnectTimer = setTimeout(() => {
-          console.log('[Server] Attempting Relay reconnect...');
-          setupRelay().catch(e => console.error('[Server] Reconnect error:', e.message));
+          console.log('[Server] Retrying Relay setup...');
+          setupRelay();
         }, 5000);
       }
     });
@@ -760,18 +763,18 @@ async function setupRelay(){
     });
   } catch(e) {
     console.error('[Server] setupRelay error:', e.message);
-    // Retry nach 10 Sekunden
+    relaySetupAttempted = false;
     if (!relayReconnectTimer) {
       relayReconnectTimer = setTimeout(() => {
-        console.log('[Server] Retrying Relay setup...');
-        setupRelay().catch(e => console.error('[Server] Retry error:', e.message));
+        console.log('[Server] Retrying Relay setup after error...');
+        setupRelay();
       }, 10000);
     }
   }
 }
 
-// Starte Relay-Setup im Hintergrund
-setupRelay().catch(e => console.error('[Server] Initial setupRelay error:', e.message));
+// Starte Relay-Setup einmalig beim Start
+setupRelay();
 
 // Heartbeat für Relay
 setInterval(() => {
@@ -853,6 +856,4 @@ setInterval(() => {
     }
   }
 }, 120000);
-
-
 
