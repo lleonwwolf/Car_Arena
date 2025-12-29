@@ -1023,12 +1023,20 @@
             relayWs.onopen = () => {
                 console.log('[Client] Relay WebSocket opened');
                 netSetStatus('Relay: Verbunden');
+                // FIX: Sende player_connect sofort nach Verbindung
+                relayWs.send(JSON.stringify({ type: 'player_connect', playerId: NET.playerId }));
             };
 
             relayWs.onmessage = (ev) => {
                 let msg;
                 try { msg = JSON.parse(ev.data); } catch { return; }
                 console.log('[Client] Relay message received:', msg.type, msg);
+
+                // FIX: Handle relay_welcome
+                if (msg.type === 'relay_welcome'){
+                    console.log('[Client] Relay welcomed us, clientId:', msg.clientId);
+                    return;
+                }
 
                 if (msg.type === 'assign_pending'){
                     console.log('[Client] Relay says: waiting for server instance...');
@@ -1038,7 +1046,7 @@
 
                 if (msg.type === 'assign_instance'){
                     const wsUrl = msg.wsUrl || `wss://cararena-match.up.railway.app/`;
-                    console.log('[Client] Assigned to Match-Server:', wsUrl, 'kind:', msg.kind);
+                    console.log('[Client] Assigned to Match-Server:', wsUrl, 'kind:', msg.kind, 'port:', msg.port);
                     netSetStatus('Game-Server: Verbinden…');
                     relayWs.close();
 
