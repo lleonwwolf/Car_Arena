@@ -1023,7 +1023,7 @@
             relayWs.onopen = () => {
                 console.log('[Client] Relay WebSocket opened');
                 netSetStatus('Relay: Verbunden');
-                // FIX: Sende player_connect sofort nach Verbindung
+                // Sende player_connect sofort nach Verbindung
                 relayWs.send(JSON.stringify({ type: 'player_connect', playerId: NET.playerId }));
             };
 
@@ -1032,9 +1032,32 @@
                 try { msg = JSON.parse(ev.data); } catch { return; }
                 console.log('[Client] Relay message received:', msg.type, msg);
 
-                // FIX: Handle relay_welcome
+                // Handle relay_welcome - JETZT senden wir create_game_room oder join_game_room!
                 if (msg.type === 'relay_welcome'){
                     console.log('[Client] Relay welcomed us, clientId:', msg.clientId);
+                    console.log('[Client] Pending action:', NET.pendingAction);
+
+                    // FIX: Jetzt den eigentlichen Request senden!
+                    if (NET.pendingAction === 'host'){
+                        const maxP = expectedPlayers || 2;
+                        const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
+                        console.log('[Client] Sending create_game_room to Relay:', { maxPlayers: maxP, playerName });
+                        relayWs.send(JSON.stringify({
+                            type: 'create_game_room',
+                            maxPlayers: maxP,
+                            playerName,
+                            settings: getCurrentSettings()
+                        }));
+                    } else if (NET.pendingAction === 'join'){
+                        const code = (document.getElementById('onCode')?.value || '').trim().toUpperCase();
+                        const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
+                        console.log('[Client] Sending join_game_room to Relay:', { code, playerName });
+                        relayWs.send(JSON.stringify({
+                            type: 'join_game_room',
+                            code,
+                            playerName
+                        }));
+                    }
                     return;
                 }
 
@@ -1068,10 +1091,21 @@
                         }
 
                         // Sende create_room oder join_room an Match-Server
-                        console.log('[Client] Dispatching relay:assigned event, kind:', msg.kind || NET.pendingAction);
-                        document.dispatchEvent(new CustomEvent('relay:assigned', {
-                            detail: { kind: msg.kind || NET.pendingAction || 'host' }
-                        }));
+                        const kind = msg.kind || NET.pendingAction || 'host';
+                        console.log('[Client] Sending room request to Match-Server, kind:', kind);
+
+                        if (kind === 'host'){
+                            const maxP = expectedPlayers || 2;
+                            const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
+                            console.log('[Client] Sending create_room:', { maxPlayers: maxP, playerName });
+                            wsSend({ type:'create_room', maxPlayers: maxP, playerName, settings: getCurrentSettings() });
+                        } else if (kind === 'join'){
+                            const code = (document.getElementById('onCode')?.value || '').trim().toUpperCase();
+                            const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
+                            console.log('[Client] Sending join_room:', { code, playerName });
+                            wsSend({ type:'join_room', code, playerName });
+                        }
+
                         resolve();
                     };
                     gameWs.onclose = () => {
@@ -2356,30 +2390,7 @@
     }
 
     // create_room/join_room Send bei relay:assigned
-    (function wireGameRoomRequests(){
-        const sendCreate = () => {
-            const maxP = expectedPlayers || 2;
-            const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
-            console.log('[Client] Sending create_room to Match-Server:', { maxPlayers: maxP, playerName });
-            wsSend({ type:'create_room', maxPlayers: maxP, playerName, settings: getCurrentSettings() });
-        };
-        const sendJoin = () => {
-            const code = (document.getElementById('onCode')?.value || '').trim().toUpperCase();
-            const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
-            if (!code) {
-                console.error('[Client] No room code for join!');
-                return;
-            }
-            console.log('[Client] Sending join_room to Match-Server:', { code, playerName });
-            wsSend({ type:'join_room', code, playerName });
-        };
-        document.addEventListener('relay:assigned', (e) => {
-            const kind = e.detail?.kind;
-            console.log('[Client] relay:assigned event received, kind:', kind);
-            if (kind === 'host') sendCreate();
-            if (kind === 'join') sendJoin();
-        });
-    })();
+    // ENTFERNT: wireGameRoomRequests Event-Listener, da dies jetzt direkt in netConnect() gemacht wird
 
     // =============================
     //  Preferences System (lokal, keine Server-Änderungen)
