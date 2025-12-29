@@ -41,13 +41,18 @@ function broadcastToPlayers(obj) {
 function flushPendingToInstance(port){
   if (!port) return;
   const wsUrl = MATCH_WS_URL; // feste öffentliche URL zur Match-Instanz
+  
+  console.log(`[Relay] Flushing ${pendingCreates.length} creates and ${pendingJoins.length} joins to port ${port}`);
+  
   while (pendingCreates.length){
     const req = pendingCreates.shift();
     send(req.ws, { type:'assign_instance', port, wsUrl, kind:'host' });
+    console.log(`[Relay] Assigned create request to ${port}`);
   }
   while (pendingJoins.length){
     const req = pendingJoins.shift();
     send(req.ws, { type:'assign_instance', port, wsUrl, kind:'join' });
+    console.log(`[Relay] Assigned join request to ${port}`);
   }
 }
 
@@ -152,9 +157,13 @@ wss.on("connection", (ws, req) => {
   ws.isAlive = true;
   ws.on("pong", () => { ws.isAlive = true; });
 
+  console.log(`[Relay] New connection from ${req.socket.remoteAddress}, clientId: ${clientId}`);
+
   ws.on("message", (raw) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
+
+    console.log(`[Relay] Message from ${clientId}:`, msg.type, msg);
 
     // ====== INSTANZ-MESSAGES ======
     if (msg.type === "instance_online") {
@@ -168,10 +177,9 @@ wss.on("connection", (ws, req) => {
         port: instancePort,
         host: ws._host
       });
-      console.log(`[Relay] Instance online: port ${instancePort}`);
-      // Keine Bestätigung nötig – Instanz läuft einfach weiter
+      console.log(`[Relay] Instance registered: port ${instancePort}, total instances: ${instances.size}`);
 
-      // Pending-Clients jetzt zuweisen
+      // WICHTIG: Sofort pending clients zuweisen
       flushPendingToInstance(instancePort);
       return;
     }
@@ -184,7 +192,8 @@ wss.on("connection", (ws, req) => {
         inst.timestamp = Date.now();
         instances.set(port, inst);
         console.log(`[Relay] Instance ready: port ${port}`);
-        // Pending-Clients jetzt zuweisen
+        
+        // Nochmal pending clients zuweisen
         flushPendingToInstance(port);
       }
       return;
@@ -239,7 +248,7 @@ wss.on("connection", (ws, req) => {
       playerId = msg.playerId || clientId;
       ws._host = req?.headers?.host || 'localhost';
       playerClients.set(playerId, { ws, currentMatch: null, tournament: null });
-      console.log(`[Relay] Player connected: ${playerId}`);
+      console.log(`[Relay] Player connected: ${playerId}, total players: ${playerClients.size}`);
       send(ws, { type: "relay_welcome", clientId, role: "player" });
       return;
     }
@@ -312,28 +321,42 @@ wss.on("connection", (ws, req) => {
 
     // NEU: Client sendet Create/Join Request an Relay
     if (msg.type === 'create_game_room'){
+      console.log(`[Relay] create_game_room request from ${clientId}, maxPlayers: ${msg.maxPlayers}`);
+      console.log(`[Relay] Available instances:`, Array.from(instances.keys()));
+
       const pick = pickActiveInstance();
-      console.log(`[Relay] create_game_room: ${pick ? `Found instance ${pick.port}` : 'No instances available'}`);
       if (pick){
+        console.log(`[Relay] Assigning to instance port ${pick.port}, wsUrl: ${MATCH_WS_URL}`);
         send(ws, { type:'assign_instance', port: pick.port, wsUrl: MATCH_WS_URL, kind:'host' });
         return;
       }
+
+      console.log(`[Relay] No instances available, adding to pending queue`);
       send(ws, { type:'assign_pending' });
       pendingCreates.push({ ws, payload: { maxPlayers: msg.maxPlayers, playerName: msg.playerName, settings: msg.settings }});
-      triggerWakeProvider().then(()=>{ /* warten auf instance_ready */ });
+      triggerWakeProvider().then((ok) => {
+        console.log(`[Relay] Wake provider triggered: ${ok}`);
+      });
       return;
     }
 
     if (msg.type === 'join_game_room'){
+      console.log(`[Relay] join_game_room request from ${clientId}, code: ${msg.code}`);
+      console.log(`[Relay] Available instances:`, Array.from(instances.keys()));
+
       const pick = pickActiveInstance();
-      console.log(`[Relay] join_game_room: ${pick ? `Found instance ${pick.port}` : 'No instances available'}`);
       if (pick){
+        console.log(`[Relay] Assigning to instance port ${pick.port}, wsUrl: ${MATCH_WS_URL}`);
         send(ws, { type:'assign_instance', port: pick.port, wsUrl: MATCH_WS_URL, kind:'join' });
         return;
       }
+
+      console.log(`[Relay] No instances available, adding to pending queue`);
       send(ws, { type:'assign_pending' });
       pendingJoins.push({ ws, payload: { code: msg.code, playerName: msg.playerName }});
-      triggerWakeProvider().then(()=>{ /* warten auf instance_ready */ });
+      triggerWakeProvider().then((ok) => {
+        console.log(`[Relay] Wake provider triggered: ${ok}`);
+      });
       return;
     }
 
@@ -376,12 +399,11 @@ wss.on("connection", (ws, req) => {
   });
 
   ws.on("close", () => {
+    console.log(`[Relay] Connection closed: clientId ${clientId}, instancePort: ${instancePort}, playerId: ${playerId}`);
     if (instancePort) {
-      console.log(`[Relay] Instance disconnected: port ${instancePort}`);
       instances.delete(instancePort);
     }
     if (playerId) {
-      console.log(`[Relay] Player disconnected: ${playerId}`);
       playerClients.delete(playerId);
     }
   });
@@ -416,9 +438,9 @@ setInterval(() => {
 }, 20000);
 
 setInterval(() => {
-  console.log(`[Relay] Status: ${instances.size} instances (${Array.from(instances.keys()).join(', ')}), ${playerClients.size} players, ${tournaments.size} tournaments`);
+  console.log(`[Relay] Status: ${instances.size} instances (${Array.from(instances.keys()).join(', ') || 'none'}), ${playerClients.size} players, ${tournaments.size} tournaments`);
   console.log(`[Relay] Pending: ${pendingCreates.length} creates, ${pendingJoins.length} joins`);
-}, 60000);
+}, 30000); // Alle 30 Sekunden
 
 server.listen(PORT, () => {
   console.log(`[Relay] Server listening on port ${PORT}`);

@@ -388,8 +388,10 @@ function broadcastRoom(room, obj){
 wss.on("connection", (ws) => {
   ws.roomCode = null;
   ws.playerIndex = null;
-  ws.role = 'viewer'; // default Rolle bis Slot zugewiesen
+  ws.role = 'viewer';
   ws.isAlive = true;
+
+  console.log(`[Match] New WebSocket connection`);
 
   ws.on("pong", () => { ws.isAlive = true; });
 
@@ -397,16 +399,19 @@ wss.on("connection", (ws) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
 
+    console.log(`[Match] Message received:`, msg.type, msg);
+
     if (msg.type === "ping"){
-      // Antworte sofort – Client misst Roundtrip
       const t = (typeof msg.t === 'number') ? msg.t : Date.now();
       send(ws, { type: "pong", t });
       return;
     }
 
     if (msg.type === "create_room"){
+      console.log(`[Match] Creating room, maxPlayers: ${msg.maxPlayers}`);
       const maxP = clamp(msg.maxPlayers || 2, 2, 4);
       const room = createRoom(maxP, msg.settings || null);
+
       // Tournament Settings übernehmen, falls vorhanden
       if (msg.tournament && typeof msg.tournament === 'object'){
         room.tournament.enabled = true;
@@ -431,6 +436,8 @@ wss.on("connection", (ws) => {
       room.playerNames[0] = (msg.playerName || 'Player').slice(0, 20);
       ws.roomCode = room.code;
       ws.playerIndex = 0;
+
+      console.log(`[Match] Room created: ${room.code}, player 0: ${room.playerNames[0]}`);
 
       send(ws, {
         type:"room_created",
@@ -464,19 +471,25 @@ wss.on("connection", (ws) => {
 
     if (msg.type === "join_room"){
       const code = String(msg.code || "").toUpperCase().trim();
+      console.log(`[Match] Join request for room: ${code}`);
+
       const room = rooms.get(code);
-      if (!room) return send(ws, { type:"join_failed", reason:"Room not found" });
+      if (!room) {
+        console.log(`[Match] Room not found: ${code}`);
+        return send(ws, { type:"join_failed", reason:"Room not found" });
+      }
+
+      console.log(`[Match] Room found, current players:`, room.playerNames);
 
       room.clients.add(ws);
 
-      // Weisen wir wenn möglich einen freien Player-Slot zu, sonst als Viewer aufnehmen
       let idx = null;
       for (let i=0;i<room.maxPlayers;i++){
         if (!room.players[i]) { idx = i; break; }
       }
 
       if (idx === null){
-        // Raum voll: als Viewer joinen
+        console.log(`[Match] Room full, joining as viewer`);
         room.viewers.add(ws);
         ws.roomCode = code;
         ws.playerIndex = null;
@@ -489,17 +502,17 @@ wss.on("connection", (ws) => {
           maxPlayers: room.maxPlayers
         });
         broadcastRoom(room, { type:"player_joined", count: room.clients.size, playerNames: room.playerNames });
-        // kein Countdown hier (Zuschauer zählen nicht)
         return;
       }
 
-      // Spieler-Slot vergeben
       room.players[idx] = ws;
       room.viewers.delete(ws);
       room.playerNames[idx] = (msg.playerName || 'Player').slice(0, 20);
       ws.roomCode = code;
       ws.playerIndex = idx;
       ws.role = 'player';
+
+      console.log(`[Match] Player ${idx} joined: ${room.playerNames[idx]}`);
 
       send(ws, {
         type:"join_ok",
@@ -636,6 +649,7 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
+    console.log(`[Match] WebSocket closed, roomCode: ${ws.roomCode}, playerIndex: ${ws.playerIndex}`);
     const code = ws.roomCode;
     if (!code) return;
     const room = rooms.get(code);
@@ -659,24 +673,6 @@ wss.on("connection", (ws) => {
   });
 });
 
-// ---------- Lobby start helper ----------
-function tryStartCountdown(room){
-  if (room.started) return;
-  if (room.countdownRemaining > 0) return;
-  // prüfen, ob alle player slots besetzt und Namen gesetzt sind
-  let allPresent = true;
-  for (let i=0;i<room.maxPlayers;i++){
-    if (!room.players[i]) { allPresent = false; break; }
-    if (!room.playerNames[i] || room.playerNames[i].trim() === '') { allPresent = false; break; }
-  }
-  if (!allPresent) return;
-  // Countdown starten: Server sendet einmalig die Nachricht
-  room.countdownRemaining = 3;
-  room.countdownLastTick = nowMs();
-  // Sende nur EINMAL countdown_start – Client zählt dann lokal runter
-  broadcastRoom(room, { type:'countdown_start', remaining: 3 });
-}
-
 // ---------- Relay ----------
 const RELAY_URL = process.env.RELAY_URL || "wss://cararena-relay.up.railway.app/";
 let relay = null;
@@ -689,17 +685,18 @@ function relaySend(obj){
 
 function setupRelay(){
   if (!RELAY_URL) return;
-  console.log(`[Server] Connecting to Relay: ${RELAY_URL}`);
+  console.log(`[Match] Connecting to Relay: ${RELAY_URL}`);
 
   relay = new WebSocket(RELAY_URL);
 
   relay.on('open', () => {
      relayConnected = true;
-     console.log(`[Server] Connected to Relay, registering on port ${PORT}`);
+     console.log(`[Match] Connected to Relay, registering on port ${PORT}`);
      relaySend({ type:'instance_online', port: PORT });
+
      setTimeout(() => {
        relaySend({ type:'instance_ready', port: PORT, ts: nowMs() });
-       console.log(`[Server] Sent instance_ready to Relay`);
+       console.log(`[Match] Sent instance_ready to Relay`);
      }, 100);
 
     if (relayReconnectTimer) {
@@ -709,22 +706,27 @@ function setupRelay(){
   });
 
   relay.on('close', () => {
-    console.log('[Server] Relay connection closed, reconnecting in 5s...');
+    console.log('[Match] Relay connection closed, reconnecting in 5s...');
     relayConnected = false;
     if (!relayReconnectTimer) {
       relayReconnectTimer = setTimeout(() => {
-        console.log('[Server] Attempting Relay reconnect...');
+        console.log('[Match] Attempting Relay reconnect...');
         setupRelay();
       }, 5000);
     }
   });
 
   relay.on('error', (err) => {
-    console.error('[Server] Relay error:', err.message);
+    console.error('[Match] Relay error:', err.message);
   });
 
-  relay.on('message', (ev) => {
-     let msg; try{ msg = JSON.parse(ev.data); }catch{ return; }
+  relay.on('message', (raw) => {
+     // FIX: ws library sendet Buffer, nicht MessageEvent
+     let msg; 
+     try{ 
+       const data = (typeof raw === 'string') ? raw : raw.toString();
+       msg = JSON.parse(data); 
+     }catch{ return; }
 
      if (msg.type === 'tournament_match_assign'){
        const tournId = msg.tournamentId;
@@ -752,30 +754,37 @@ function setupRelay(){
        }
 
        resetKickoff(room);
-       console.log(`[Server] Tournament match assigned: ${matchId} in room ${room.code}`);
+       console.log(`[Match] Tournament match assigned: ${matchId} in room ${room.code}`);
        relaySend({ type:'match_assigned_ok', matchId, code: room.code, port: PORT });
      }
   });
 }
 
-// Starte Relay-Setup beim Start
-setupRelay();
-
-// Heartbeat für Relay (alle 20s)
-setInterval(() => {
-  if (relayConnected) {
-    relaySend({ type:'instance_heartbeat', port: PORT, ts: nowMs() });
+// ---------- Lobby start helper ----------
+function tryStartCountdown(room){
+  if (room.started) return;
+  if (room.countdownRemaining > 0) return;
+  // prüfen, ob alle player slots besetzt und Namen gesetzt sind
+  let allPresent = true;
+  for (let i=0;i<room.maxPlayers;i++){
+    if (!room.players[i]) { allPresent = false; break; }
+    if (!room.playerNames[i] || room.playerNames[i].trim() === '') { allPresent = false; break; }
   }
-}, 20000);
-
-// WebSocket Heartbeat
-setInterval(() => {
-  for (const ws of wss.clients){
-    if (ws.isAlive === false) { ws.terminate(); continue; }
-    ws.isAlive = false;
-    ws.ping();
-  }
-}, 15000);
+  if (!allPresent) return;
+  
+  // FIX: Countdown mit korrektem Timestamp starten
+  room.countdownRemaining = 3;
+  room.countdownLastTick = nowMs();
+  
+  // Sende countdown_start mit aktuellem Timestamp
+  broadcastRoom(room, { 
+    type:'countdown_start', 
+    remaining: 3,
+    startedAt: room.countdownLastTick  // Client kann damit synchronisieren
+  });
+  
+  console.log(`[Match] Countdown started for room ${room.code}`);
+}
 
 // Game Loop
 let last = nowMs();
@@ -785,27 +794,42 @@ setInterval(() => {
   last = t;
 
   for (const room of rooms.values()){
+    // FIX: Countdown-Logik vereinfachen
     if (!room.started && room.countdownRemaining > 0){
       const elapsed = t - room.countdownLastTick;
-      if (elapsed >= 3000){
-        room.countdownRemaining = 0;
-        room.started = true;
-        resetKickoff(room);
-        broadcastRoom(room, {
-          type:'start',
-          cfgPartial: {
-            carAcc: room.cfg.carAccel,
-            carMaxSpeed: room.cfg.carMaxV,
-            carDrag: room.cfg.carDrag,
-            boostAccMul: room.cfg.boostAccelMul,
-            boostMaxMul: room.cfg.boostMaxMul,
-            boostDrain: room.cfg.boostDrain,
-            boostRegen: room.cfg.boostRegen,
-            ballDrag: room.cfg.ballDrag,
-            wallRestitution: room.cfg.wallBounce,
-            kickImpulse: room.cfg.kick
-          }
-        });
+      
+      // Alle 1 Sekunde decrementieren
+      if (elapsed >= 1000){
+        room.countdownRemaining--;
+        room.countdownLastTick = t;
+        
+        if (room.countdownRemaining <= 0){
+          // Match starten!
+          room.started = true;
+          resetKickoff(room);
+          broadcastRoom(room, {
+            type:'start',
+            cfgPartial: {
+              carAcc: room.cfg.carAccel,
+              carMaxSpeed: room.cfg.carMaxV,
+              carDrag: room.cfg.carDrag,
+              boostAccMul: room.cfg.boostAccelMul,
+              boostMaxMul: room.cfg.boostMaxMul,
+              boostDrain: room.cfg.boostDrain,
+              boostRegen: room.cfg.boostRegen,
+              ballDrag: room.cfg.ballDrag,
+              wallRestitution: room.cfg.wallBounce,
+              kickImpulse: room.cfg.kick
+            }
+          });
+          console.log(`[Match] Match started in room ${room.code}`);
+        } else {
+          // Weiter countdown broadcasten
+          broadcastRoom(room, { 
+            type:'countdown_tick', 
+            remaining: room.countdownRemaining 
+          });
+        }
       }
     }
 
@@ -836,9 +860,18 @@ setInterval(() => {
   for (const [code, room] of rooms.entries()) {
     // Lösche nur, wenn Raum alt UND leer
     if (room.clients.size === 0 && (now - room.createdAt) > maxAge) {
-      console.log(`[Server] Cleaning up old empty room: ${code}`);
+      console.log(`[Match] Cleaning up old empty room: ${code}`);
       rooms.delete(code);
     }
   }
 }, 120000);
+
+// NEU: netDisconnect() Fallback für Client (nicht hier, aber sicherstellen dass Relay diese Calls handlet)
+
+// Am Ende der Datei: Relay-Verbindung starten
+setupRelay();
+
+server.listen(PORT, () => {
+  console.log(`[Match] Server listening on port ${PORT}`);
+});
 
