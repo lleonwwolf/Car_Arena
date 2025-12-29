@@ -18,17 +18,17 @@
             --ball:#fbbf24;
             --good:#22c55e;
             --shadow-s:
-                inset 0 1px 2px hsla(0, 0%, 100%, 0.1),
-                0 1px 2px hsla(0, 0%, 0%, 0.3),
-                0 2px 4px hsla(0, 0%, 0%, 0.15);
+                    inset 0 1px 2px hsla(0, 0%, 100%, 0.1),
+                    0 1px 2px hsla(0, 0%, 0%, 0.3),
+                    0 2px 4px hsla(0, 0%, 0%, 0.15);
             --shadow-m:
-                inset 0 2px 4px hsla(0, 0%, 100%, 0.1),
-                0 2px 4px hsla(0, 0%, 0%, 0.3),
-                0 4px 8px hsla(0, 0%, 0%, 0.15);
+                    inset 0 2px 4px hsla(0, 0%, 100%, 0.1),
+                    0 2px 4px hsla(0, 0%, 0%, 0.3),
+                    0 4px 8px hsla(0, 0%, 0%, 0.15);
             --shadow-l:
-                inset 0 2px 4px hsla(0, 0%, 100%, 0.1),
-                0 4px 6px hsla(0, 0%, 0%, 0.3),
-                0 6px 10px hsla(0, 0%, 0%, 0.15);
+                    inset 0 2px 4px hsla(0, 0%, 100%, 0.1),
+                    0 4px 6px hsla(0, 0%, 0%, 0.3),
+                    0 6px 10px hsla(0, 0%, 0%, 0.15);
         }
 
         /* NEU: Wenn Preferences offen sind, soll das Menü keine Klicks abfangen */
@@ -953,49 +953,103 @@
         currentTournament: null,
     };
 
+    const TOURNAMENT = {
+        enabled: false,
+        mode: null,
+        phase: null,
+        config: null,
+        groups: [],
+        bracket: [],
+        paused: false,
+        pauseEndsAt: 0,
+    };
+
+    // ---------- Helpers ----------
     function wsSend(obj){
         if (NET.ws && NET.ws.readyState === 1){
-            try {
-                NET.ws.send(JSON.stringify(obj));
-            } catch(e){ console.error('[Client] Send error:', e); }
+            try{ NET.ws.send(JSON.stringify(obj)); }catch(e){ console.error('[Send Error]', e); }
         }
     }
 
+    function netSetStatus(txt){
+        const el = document.getElementById('onStatus');
+        if (el) el.textContent = 'Status: ' + txt;
+    }
+
+    function updatePingHud(ms){
+        const el = document.getElementById('pingHud');
+        if (el){ el.textContent = `Ping: ${Math.round(ms)}ms`; el.hidden = false; }
+    }
+
+    function getCurrentSettings(){
+        return {
+            carAccel: CFG.carAcc,
+            carMaxV: CFG.carMaxSpeed,
+            carDrag: CFG.carDrag,
+            boostAccMul: CFG.boostAccMul,
+            boostMaxMul: CFG.boostMaxMul,
+            boostDrain: CFG.boostDrain,
+            boostRegen: CFG.boostRegen,
+            ballDrag: CFG.ballDrag,
+            wallBounce: CFG.wallRestitution,
+            kickImpulse: CFG.kickImpulse
+        };
+    }
+
+    function applyOnlineCfg(partial){
+        if (!partial || typeof partial !== 'object') return;
+        if (partial.carAcc) CFG.carAcc = partial.carAcc;
+        if (partial.carMaxSpeed) CFG.carMaxSpeed = partial.carMaxSpeed;
+        if (partial.carDrag) CFG.carDrag = partial.carDrag;
+        if (partial.boostAccMul) CFG.boostAccMul = partial.boostAccMul;
+        if (partial.boostMaxMul) CFG.boostMaxMul = partial.boostMaxMul;
+        if (partial.boostDrain) CFG.boostDrain = partial.boostDrain;
+        if (partial.boostRegen) CFG.boostRegen = partial.boostRegen;
+        if (partial.ballDrag) CFG.ballDrag = partial.ballDrag;
+        if (partial.wallRestitution) CFG.wallRestitution = partial.wallRestitution;
+        if (partial.kickImpulse) CFG.kickImpulse = partial.kickImpulse;
+    }
+
+    // ---------- Online Connect ----------
+    let expectedPlayers = 2;
+
     async function netConnect(){
         return new Promise((resolve, reject) => {
-            console.log('[Client] Connecting to Relay:', WS_RELAY_URL);
+            console.log('[Client] netConnect() called, connecting to Relay:', WS_RELAY_URL);
+            netSetStatus('Relay: Verbinden…');
             const relayWs = new WebSocket(WS_RELAY_URL);
+            NET.ws = relayWs;
 
             relayWs.onopen = () => {
-                console.log('[Client] Relay connected');
-                relayWs.send(JSON.stringify({ type: 'player_connect', playerId: NET.playerId }));
+                console.log('[Client] Relay WebSocket opened');
+                netSetStatus('Relay: Verbunden');
             };
 
             relayWs.onmessage = (ev) => {
                 let msg;
                 try { msg = JSON.parse(ev.data); } catch { return; }
-
-                if (msg.type === 'relay_welcome'){
-                    console.log('[Client] Relay welcomed');
-                    return;
-                }
+                console.log('[Client] Relay message received:', msg.type, msg);
 
                 if (msg.type === 'assign_pending'){
-                    console.log('[Client] Waiting for server instance...');
+                    console.log('[Client] Relay says: waiting for server instance...');
+                    netSetStatus('Relay: Warte auf Server…');
                     return;
                 }
 
                 if (msg.type === 'assign_instance'){
-                    console.log('[Client] Assigned to match server:', msg.wsUrl);
+                    const wsUrl = msg.wsUrl || `wss://cararena-match.up.railway.app/`;
+                    console.log('[Client] Assigned to Match-Server:', wsUrl, 'kind:', msg.kind);
+                    netSetStatus('Game-Server: Verbinden…');
+                    relayWs.close();
 
-                    try { relayWs.close(); } catch(e){}
-
-                    const gameWs = new WebSocket(msg.wsUrl);
+                    console.log('[Client] Connecting to Match-Server:', wsUrl);
+                    const gameWs = new WebSocket(wsUrl);
                     NET.ws = gameWs;
 
                     gameWs.onopen = () => {
                         NET.connected = true;
-                        console.log('[Client] Connected to match server');
+                        console.log('[Client] Match-Server WebSocket opened');
+                        netSetStatus('Game-Server: Verbunden');
 
                         if (!NET.pingTimer){
                             NET.pingTimer = setInterval(() => {
@@ -1005,411 +1059,35 @@
                             }, 1500);
                         }
 
+                        // Sende create_room oder join_room an Match-Server
+                        console.log('[Client] Dispatching relay:assigned event, kind:', msg.kind || NET.pendingAction);
                         document.dispatchEvent(new CustomEvent('relay:assigned', {
-                            detail: { kind: NET.pendingAction || 'host' }
+                            detail: { kind: msg.kind || NET.pendingAction || 'host' }
                         }));
                         resolve();
                     };
-
+                    gameWs.onclose = () => {
+                        NET.connected = false;
+                        console.log('[Client] Match-Server WebSocket closed');
+                        netSetStatus('Game-Server: Getrennt');
+                    };
+                    gameWs.onerror = (err) => {
+                        NET.connected = false;
+                        console.error('[Client] Match-Server WebSocket error:', err);
+                        netSetStatus('Game-Server: Fehler');
+                    };
                     gameWs.onmessage = (ev2) => {
                         let gameMsg;
                         try { gameMsg = JSON.parse(ev2.data); } catch { return; }
-                        handleGameMessage(gameMsg);
-                    };
-
-                    gameWs.onclose = () => {
-                        NET.connected = false;
-                        console.log('[Client] Match server disconnected');
-                    };
-
-                    gameWs.onerror = () => {
-                        console.error('[Client] Match server error');
-                    };
-                }
-            };
-
-            relayWs.onerror = (e) => {
-                console.error('[Client] Relay error');
-                reject(e);
-            };
-
-            relayWs.onclose = () => {
-                console.log('[Client] Relay closed');
-            };
-        });
-    }
-            const roleLabel = (NET.playerIndex === null) ? 'Viewer' : ('P' + (NET.playerIndex??'?'));
-    function handleGameMessage(msg){
-        if (msg.type === 'room_created'){
-            NET.roomCode = msg.code;
-            NET.playerIndex = msg.playerIndex;
-            console.log('[Client] Room created:', NET.roomCode);
-            enterLobby();
-            return;
-        }
-                : '';
-        if (msg.type === 'join_ok'){
-            NET.roomCode = msg.code;
-            NET.playerIndex = msg.playerIndex;
-            console.log('[Client] Joined room:', NET.roomCode);
-            enterLobby();
-            return;
-        }
-
-        if (msg.type === 'countdown_start'){
-            console.log('[Client] Countdown started');
-            return;
-        }
-
-        if (msg.type === 'start'){
-            console.log('[Client] Game started');
-            startOnline();
-            return;
-        }
-    }
-        if (msg.type === 'state'){
-            // Update game state from server
-            return;
-        NET.roomCode = "";
-    }
-        NET.playerIndex = null;
-    function enterLobby(){
-        const lobby = document.getElementById('lobby');
-        if (lobby){
-            lobby.style.display = 'flex';
-            document.getElementById('lobbyCode').textContent = NET.roomCode;
-        }
-        try{ if (NET.pingTimer) clearInterval(NET.pingTimer); }catch{}
-        NET.pingTimer = null;
-    function startOnline(){
-        document.getElementById('ui').style.display = 'none';
-        document.getElementById('lobby').style.display = 'none';
-        document.getElementById('hud').hidden = false;
-            try{ NET.ws.close(); }catch{}
-
-    // Relay-basierte Verbindung: zunächst zum Relay, dann nach assign_instance zur Match-Instanz
-    function netConnect(){
-        return new Promise((resolve, reject) => {
-    // Host button
-    document.getElementById('onHost')?.addEventListener('click', async () => {
-        try {
-            await netConnect();
-            const playerName = document.getElementById('onPlayerName')?.value || 'Player';
-            const maxPlayers = parseInt(document.getElementById('onVariant')?.value || '2');
-            wsSend({ type: 'create_game_room', maxPlayers, playerName });
-            setTimeout(() => {
-                wsSend({ type: 'create_room', maxPlayers, playerName });
-            }, 100);
-        } catch(e){
-            console.error('Host failed:', e);
-        }
-    });
-
-    // Join button
-    document.getElementById('onJoin')?.addEventListener('click', async () => {
-        const code = document.getElementById('onCode')?.value?.trim().toUpperCase();
-        if (!code) return;
-        try {
-            await netConnect();
-            const playerName = document.getElementById('onPlayerName')?.value || 'Player';
-            wsSend({ type: 'join_game_room', code, playerName });
-            setTimeout(() => {
-                wsSend({ type: 'join_room', code, playerName });
-            }, 100);
-        } catch(e){
-            console.error('Join failed:', e);
-        }
-    });
-
-    // =============================
-    //  Preferences System (lokal, keine Server-Änderungen)
-    // =============================
-
-    const PREFS = {
-        teamColors: {
-            left: '#60a5fa',   // blau
-            right: '#f87171'   // rot
-        },
-        controls: {
-            player1: { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' },
-            player2: { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
-        }
-    };
-
-    // Verfügbare Farben (Name, HexValue)
-    const AVAILABLE_COLORS = [
-        { name: 'Blau', hex: '#60a5fa' },
-        { name: 'Rot', hex: '#f87171' },
-        { name: 'Grün', hex: '#22c55e' },
-        { name: 'Gelb', hex: '#eab308' },
-        { name: 'Lila', hex: '#a855f7' },
-    ];
-
-    const CONTROL_KEYS = {
-        player1: ['up', 'down', 'left', 'right', 'boost'],
-        player2: ['up', 'down', 'left', 'right', 'boost']
-    };
-
-    const KEY_NAMES = {
-        'up': 'Hoch',
-        'down': 'Runter',
-        'left': 'Links',
-        'right': 'Rechts',
-        'boost': 'Boost'
-    };
-
-    // Lade Preferences aus localStorage
-    function loadPrefs(){
-        try{
-            const saved = localStorage.getItem('carArenaPrefs');
-            if (saved){
-                const parsed = JSON.parse(saved);
-                Object.assign(PREFS.teamColors, parsed.teamColors || {});
-                Object.assign(PREFS.controls.player1, parsed.controls?.player1 || {});
-                Object.assign(PREFS.controls.player2, parsed.controls?.player2 || {});
-            }
-        }catch(e){ console.error('Failed to load prefs', e); }
-    }
-
-    // Speichere Preferences in localStorage
-    function savePrefs(){
-        try{
-            localStorage.setItem('carArenaPrefs', JSON.stringify(PREFS));
-        }catch(e){ console.error('Failed to save prefs', e); }
-                return;
-            }
-    // Aktualisiere lokal die Kontrollen der Cars (beim Laden oder Ändern)
-    function applyControlsToGame(){
-        if (cars.length > 0 && cars[0]){
-            cars[0].controls = { ...PREFS.controls.player1 };
-        }
-        if (cars.length > 1 && cars[1]){
-            cars[1].controls = { ...PREFS.controls.player2 };
-        }
-    }
-                NET.connected = true;
-    // Aktualisiere lokal die Farben der Cars (beim Laden oder Ändern)
-    function applyColorsToGame(){
-        if (cars.length > 0 && cars[0]){
-            cars[0].color = PREFS.teamColors.left;
-            };
-        if (cars.length > 1 && cars[1]){
-            cars[1].color = PREFS.teamColors.right;
-        }
-    }
-            relayWs.onclose = () => { NET.connected = false; netSetStatus('Relay: Getrennt'); };
-    // UI für Preferences Modal
-    function renderPrefsModal(){
-        // Team Colors
-        const teamColorsContainer = document.getElementById('teamColorsContainer');
-        if (teamColorsContainer){
-            teamColorsContainer.innerHTML = '';
-            ['left', 'right'].forEach(side => {
-                const teamName = side === 'left' ? 'Team Blau' : 'Team Rot';
-                const block = document.createElement('div');
-                block.className = 'team-color-block';
-                block.innerHTML = `<h5>${teamName}</h5>`;
-
-                const colorPicker = document.createElement('div');
-                colorPicker.className = 'color-picker';
-
-                AVAILABLE_COLORS.forEach(col => {
-                    const option = document.createElement('div');
-                    option.className = 'color-option';
-                    option.style.background = col.hex;
-                    option.title = col.name;
-                    if (PREFS.teamColors[side] === col.hex) option.classList.add('selected');
-
-                    option.addEventListener('click', () => {
-                        // Prüfe: darf diese Farbe sein? (nicht schon vom anderen Team)
-                        const otherSide = side === 'left' ? 'right' : 'left';
-                        if (PREFS.teamColors[otherSide] === col.hex){
-                            alert('Diese Farbe wird schon vom anderen Team benutzt!');
-                            return;
-                        }
-                        PREFS.teamColors[side] = col.hex;
-                        renderPrefsModal(); // Refresh UI
-                    });
-
-                    colorPicker.appendChild(option);
-                });
-
-                block.appendChild(colorPicker);
-                teamColorsContainer.appendChild(block);
-            });
-        }
-
-        // Controls Player 1
-        const controlsPlayer1 = document.getElementById('controlsPlayer1Container');
-        if (controlsPlayer1){
-            controlsPlayer1.innerHTML = '';
-            CONTROL_KEYS.player1.forEach(action => {
-                const row = document.createElement('div');
-                row.className = 'key-input-row';
-                row.innerHTML = `
-                    <label>${KEY_NAMES[action]}</label>
-                    <input type="text" class="key-input" data-player="player1" data-action="${action}"
-                           value="${getKeyName(PREFS.controls.player1[action])}" readonly>
-                `;
-                controlsPlayer1.appendChild(row);
-
-                const input = row.querySelector('input');
-                input.addEventListener('click', () => recordKey(input, 'player1', action));
-            });
-        }
-
-        // Controls Player 2
-        const controlsPlayer2 = document.getElementById('controlsPlayer2Container');
-        if (controlsPlayer2){
-            controlsPlayer2.innerHTML = '';
-            CONTROL_KEYS.player2.forEach(action => {
-                const row = document.createElement('div');
-                row.className = 'key-input-row';
-                row.innerHTML = `
-                    <label>${KEY_NAMES[action]}</label>
-                    <input type="text" class="key-input" data-player="player2" data-action="${action}"
-                           value="${getKeyName(PREFS.controls.player2[action])}" readonly>
-                `;
-                controlsPlayer2.appendChild(row);
-
-                const input = row.querySelector('input');
-                input.addEventListener('click', () => recordKey(input, 'player2', action));
-            });
-        }
-    }
-
-    // Konvertiere KeyCode zu lesbarem Namen
-    function getKeyName(code){
-        const names = {
-            'KeyW': 'W', 'KeyA': 'A', 'KeyS': 'S', 'KeyD': 'D',
-            'KeyZ': 'Z', 'KeyX': 'X', 'KeyC': 'C', 'KeyV': 'V',
-            'ArrowUp': '↑', 'ArrowDown': '↓', 'ArrowLeft': '←', 'ArrowRight': '→',
-            'Space': 'Space', 'ShiftLeft': 'Shift', 'ShiftRight': 'Shift',
-            'ControlLeft': 'Ctrl', 'ControlRight': 'Ctrl',
-            'AltLeft': 'Alt', 'AltRight': 'Alt',
-            'Tab': 'Tab', 'Enter': 'Enter'
-        };
-        return names[code] || code;
-    }
-
-    // Warte auf Tastendruck und speichere den Code
-    function recordKey(inputEl, player, action){
-        inputEl.classList.add('recording');
-        inputEl.value = 'Taste drücken...';
-        inputEl.disabled = true;
-
-        const handler = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            const code = e.code;
-            PREFS.controls[player][action] = code;
-            inputEl.value = getKeyName(code);
-            inputEl.classList.remove('recording');
-            inputEl.disabled = false;
-
-            document.removeEventListener('keydown', handler);
-        };
-
-        document.addEventListener('keydown', handler);
-    }
-
-    // Lade Preferences beim Start (FRÜH, vor erste Nutzung)
-    loadPrefs();
-
-    // Preferences Modal Init
-    (function initPrefsModal(){
-        const prefsBtn = document.getElementById('prefsBtn');
-        const modal = document.getElementById('prefsModal');
-        const closeBtn = document.getElementById('prefsModalClose');
-        const resetBtn = document.getElementById('prefsResetBtn');
-        const saveBtn = document.getElementById('prefsSaveBtn');
-
-        if (prefsBtn && modal){
-            prefsBtn.addEventListener('click', () => {
-                modal.classList.add('visible');
-                // NEU: Body-Klasse setzen, damit #ui keine Klicks abfängt
-                document.body.classList.add('prefs-open');
-                renderPrefsModal();
-            });
-        }
-
-        if (closeBtn && modal){
-            closeBtn.addEventListener('click', () => {
-                modal.classList.remove('visible');
-                // NEU: Body-Klasse entfernen
-                document.body.classList.remove('prefs-open');
-            });
-        }
-
-        if (modal){
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal){
-                    modal.classList.remove('visible');
-                    // NEU: Body-Klasse entfernen
-                    document.body.classList.remove('prefs-open');
-                }
-            });
-        }
-
-        if (resetBtn){
-            resetBtn.addEventListener('click', () => {
-                if (confirm('Alle Einstellungen zurücksetzen?')){
-                    PREFS.teamColors = { left: '#60a5fa', right: '#f87171' };
-                    PREFS.controls = {
-                        player1: { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' },
-                        player2: { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
-                    };
-                    renderPrefsModal();
-                }
-            });
-        }
-
-        if (saveBtn){
-            saveBtn.addEventListener('click', () => {
-                savePrefs();
-                applyControlsToGame();
-                applyColorsToGame();
-                modal.classList.remove('visible');
-                // NEU: Body-Klasse entfernen
-                document.body.classList.remove('prefs-open');
-                alert('Preferences gespeichert!');
-            });
-        }
-
-        // Lade Preferences beim Start (falls noch nicht geschehen)
-        loadPrefs();
-        applyControlsToGame();
-        applyColorsToGame();
-    })();
-
-    // NEU: Initialisierung beim Laden sicherstellen, damit die Buttons 'Lokal'/'Online' funktionieren
-                        NET.connected = true;
-                        netSetStatus('Game-Server: Verbunden');
-                        if (!NET.pingTimer){
-                            NET.pingTimer = setInterval(() => {
-            initUI();                 // UI-Events (Lokal/Online) aktivieren
-            showMenu();               // Menü sichtbar
-                                wsSend({ type:'ping', t: NET.lastPingSentAt });
-                            }, 1500);
-                        }
-                        document.dispatchEvent(new CustomEvent('relay:assigned', {
-    // Fallback falls DOMContentLoaded verpasst wird (z. B. bei Inline-Script Timing)
-                            detail: { kind: NET.pendingAction || 'host' }
-                        }));
-                        resolve();
-                    };
-                    gameWs.onclose = () => { NET.connected = false; netSetStatus('Game-Server: Getrennt'); };
-                    gameWs.onerror = () => { NET.connected = false; netSetStatus('Game-Server: Fehler'); };
-                    gameWs.onmessage = (ev2) => {
-                        let gameMsg; try{ gameMsg = JSON.parse(ev2.data); }catch{ return; }
+                        console.log('[Client] Match-Server message:', gameMsg.type, gameMsg);
                         handleGameMessage(gameMsg);
                     };
                     return;
                 }
 
-                // Rückfall: wenn Relay direkt room_created/join_ok mit Port liefert
+                // Fallback: Relay antwortet direkt mit room_created/join_ok (alte Architektur)
                 if (msg.type === 'room_created' || msg.type === 'join_ok'){
+                    console.log('[Client] Relay sent room_created/join_ok directly (legacy mode)');
                     const gamePort = msg.gamePort || 8080;
                     const gameWsUrl = `ws://${window.location.hostname}:${gamePort}/`;
                     relayWs.close();
@@ -1430,7 +1108,6 @@
                             }, 1500);
                         }
 
-                        // Sende create_room/join_room direkt, falls Port/Code vom Relay kam
                         const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
                         if (msg.type === 'room_created'){
                             wsSend({ type:'create_room', maxPlayers: msg.maxPlayers || (expectedPlayers||2), playerName, settings: getCurrentSettings() });
@@ -1442,14 +1119,86 @@
                     gameWs.onclose = () => { NET.connected = false; netSetStatus('Game-Server: Getrennt'); };
                     gameWs.onerror = () => { NET.connected = false; netSetStatus('Game-Server: Fehler'); };
                     gameWs.onmessage = (ev2) => {
-                        let gameMsg; try{ gameMsg = JSON.parse(ev2.data); }catch{ return; }
+                        let gameMsg;
+                        try { gameMsg = JSON.parse(ev2.data); } catch { return; }
                         handleGameMessage(gameMsg);
                     };
                     return;
                 }
             };
+
+            relayWs.onclose = () => {
+                NET.connected = false;
+                console.log('[Client] Relay WebSocket closed');
+                netSetStatus('Relay: Getrennt');
+            };
+            relayWs.onerror = (err) => {
+                console.error('[Client] Relay WebSocket error:', err);
+                reject(new Error('Relay connection failed'));
+            };
         });
     }
+
+    function netDisconnect(){
+        if (NET.ws) { try { NET.ws.close(); } catch(e){} }
+        NET.ws = null;
+        NET.connected = false;
+        NET.roomCode = "";
+        NET.playerIndex = null;
+        if (NET.pingTimer) { clearInterval(NET.pingTimer); NET.pingTimer = null; }
+        if (NET.sendTimer) { clearInterval(NET.sendTimer); NET.sendTimer = null; }
+    }
+
+    function enterLobby(){
+        const lobbyEl = document.getElementById('lobby');
+        if (lobbyEl) lobbyEl.style.display = 'flex';
+        document.getElementById('lobbyCode').textContent = NET.roomCode;
+        renderLobby();
+    }
+
+    function leaveLobby(){
+        netDisconnect();
+        const lobbyEl = document.getElementById('lobby');
+        if (lobbyEl) lobbyEl.style.display = 'none';
+        showMenu();
+    }
+
+    function renderLobby(){
+        const room = NET;
+        const slotsBlue = document.getElementById('slotsBlue');
+        const slotsRed = document.getElementById('slotsRed');
+        if (!slotsBlue || !slotsRed) return;
+        slotsBlue.innerHTML = '';
+        slotsRed.innerHTML = '';
+        for (let i=0; i<(NET.roomMaxPlayers||2); i++){
+            const side = (i % 2 === 0) ? 'left' : 'right';
+            const name = NET.playerNames[i] || '(frei)';
+            const div = document.createElement('div');
+            div.style.padding = '6px 10px';
+            div.style.background = 'rgba(255,255,255,0.04)';
+            div.style.borderRadius = '6px';
+            div.style.marginBottom = '4px';
+            div.textContent = name;
+            if (side === 'left') slotsBlue.appendChild(div);
+            else slotsRed.appendChild(div);
+        }
+        const notice = document.getElementById('lobbyNotice');
+        if (notice){
+            const filled = Object.values(NET.playerNames).filter(n => n && n.trim()).length;
+            if (filled < (NET.roomMaxPlayers||2)) notice.textContent = 'Warte auf Spieler…';
+            else notice.textContent = 'Alle Spieler bereit!';
+        }
+    }
+
+    function showTournamentOverlay(){
+        const el = document.getElementById('tournamentOverlay');
+        if (el) el.classList.add('visible');
+    }
+    function hideTournamentOverlay(){
+        const el = document.getElementById('tournamentOverlay');
+        if (el) el.classList.remove('visible');
+    }
+    function updateTournamentOverlay(){}
 
     // Zentrale Handler bleiben wie zuvor
     function handleGameMessage(msg){
@@ -1625,19 +1374,19 @@
     }
 
     function applyServerState(msg){
-         // Server nutzt dieselben Pixel-Koordinaten wie das Canvas.
-         if (!msg) return;
-         if (msg.score){
-             score = msg.score;
-             s1El.textContent = score[0];
-             s2El.textContent = score[1];
-         }
-         if (msg.ball){
-             ball.pos.x = msg.ball.x;
-             ball.pos.y = msg.ball.y;
-             ball.vel.x = msg.ball.vx || 0;
-             ball.vel.y = msg.ball.vy || 0;
-         }
+        // Server nutzt dieselben Pixel-Koordinaten wie das Canvas.
+        if (!msg) return;
+        if (msg.score){
+            score = msg.score;
+            s1El.textContent = score[0];
+            s2El.textContent = score[1];
+        }
+        if (msg.ball){
+            ball.pos.x = msg.ball.x;
+            ball.pos.y = msg.ball.y;
+            ball.vel.x = msg.ball.vx || 0;
+            ball.vel.y = msg.ball.vy || 0;
+        }
         // Namen vom Server übernehmen (Array)
         if (msg.playerNames && typeof msg.playerNames === 'object'){
             NET.playerNames = msg.playerNames;
@@ -1645,38 +1394,38 @@
         // Lobby/Match status vom Server (optional)
         NET.serverStarted = !!msg.started;
         NET.serverCountdown = (typeof msg.countdown === 'number') ? msg.countdown : (msg.countdown === undefined ? undefined : Number(msg.countdown));
-         if (msg.car && Array.isArray(msg.car)){
-             // stelle sicher, dass lokale Anzeige genug Cars hat
-             if (cars.length < msg.car.length){
-                 const add = msg.car.length - cars.length;
-                 for (let k=0;k<add;k++){
-                     const idx = cars.length;
-                     const side = (idx % 2 === 0) ? 'left' : 'right';
-                     const controls = (idx===0) ? { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' }
-                                    : (idx===1) ? { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
-                                    : { up:null, down:null, left:null, right:null, boost:null };
-                     cars.push(new Car({
-                         x: canvas.width/2, y: canvas.height/2,
-                         color: (idx%2===0) ? getCss('--blue') : getCss('--red'),
-                         side,
-                         controls,
-                         isBot:false
-                     }));
-                 }
-             }
-             for (let i=0;i<msg.car.length && i<cars.length;i++){
-                 cars[i].pos.x = msg.car[i].x;
-                 cars[i].pos.y = msg.car[i].y;
-                 cars[i].vel.x = msg.car[i].vx || 0;
-                 cars[i].vel.y = msg.car[i].vy || 0;
-             }
-             if (Array.isArray(msg.energy)){
-                 for (let i=0;i<msg.energy.length && i<cars.length;i++){
-                     if (msg.energy[i] !== undefined) cars[i].energy = msg.energy[i];
-                 }
-             }
-         }
-     }
+        if (msg.car && Array.isArray(msg.car)){
+            // stelle sicher, dass lokale Anzeige genug Cars hat
+            if (cars.length < msg.car.length){
+                const add = msg.car.length - cars.length;
+                for (let k=0;k<add;k++){
+                    const idx = cars.length;
+                    const side = (idx % 2 === 0) ? 'left' : 'right';
+                    const controls = (idx===0) ? { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' }
+                        : (idx===1) ? { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
+                            : { up:null, down:null, left:null, right:null, boost:null };
+                    cars.push(new Car({
+                        x: canvas.width/2, y: canvas.height/2,
+                        color: (idx%2===0) ? getCss('--blue') : getCss('--red'),
+                        side,
+                        controls,
+                        isBot:false
+                    }));
+                }
+            }
+            for (let i=0;i<msg.car.length && i<cars.length;i++){
+                cars[i].pos.x = msg.car[i].x;
+                cars[i].pos.y = msg.car[i].y;
+                cars[i].vel.x = msg.car[i].vx || 0;
+                cars[i].vel.y = msg.car[i].vy || 0;
+            }
+            if (Array.isArray(msg.energy)){
+                for (let i=0;i<msg.energy.length && i<cars.length;i++){
+                    if (msg.energy[i] !== undefined) cars[i].energy = msg.energy[i];
+                }
+            }
+        }
+    }
 
 
     // ---------- Input ----------
@@ -2228,8 +1977,8 @@
             const x = (side === 'left') ? 200 : canvas.width - 200;
             const y = (playersCount === 2) ? (canvas.height/2) : (canvas.height/2 + ((i < playersCount/2) ? -40 : 40));
             const controls = (i === 0) ? { up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD', boost:'Space' }
-                            : (i === 1) ? { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
-                            : { up:null, down:null, left:null, right:null, boost:null };
+                : (i === 1) ? { up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight', boost:'ShiftRight' }
+                    : { up:null, down:null, left:null, right:null, boost:null };
             // Nutze Preferences-Farben statt Defaults
             const color = (side === 'left') ? PREFS.teamColors.left : PREFS.teamColors.right;
             cars.push(new Car({
@@ -2268,24 +2017,24 @@
 
 
     function startOnline(){
-         // Online: wir starten das Rendering, State kommt vom Server
-         // vor dem Start Settings-Panel schließen
-         document.getElementById('settingsPanel')?.classList.remove('visible');
-         ui.style.display = 'none';
-         hud.hidden = false;
-         // lokale Anzeige mit erwarteter Anzahl (2 oder 4)
-         reset(false, expectedPlayers);
-         // kein Bot im Online-Modus (alle echten Spieler)
-         cars.forEach(c => { if (c) c.isBot = false; });
-         // Input senden
-         NET.role = (NET.playerIndex === null) ? 'viewer' : 'player';
-         netStartSending();
-         running = true;
-         lastT = performance.now();
-         requestAnimationFrame(loop);
-         updateChatVisibility();
-         TOURNAMENT.paused = false;
-         hideTournamentOverlay();
+        // Online: wir starten das Rendering, State kommt vom Server
+        // vor dem Start Settings-Panel schließen
+        document.getElementById('settingsPanel')?.classList.remove('visible');
+        ui.style.display = 'none';
+        hud.hidden = false;
+        // lokale Anzeige mit erwarteter Anzahl (2 oder 4)
+        reset(false, expectedPlayers);
+        // kein Bot im Online-Modus (alle echten Spieler)
+        cars.forEach(c => { if (c) c.isBot = false; });
+        // Input senden
+        NET.role = (NET.playerIndex === null) ? 'viewer' : 'player';
+        netStartSending();
+        running = true;
+        lastT = performance.now();
+        requestAnimationFrame(loop);
+        updateChatVisibility();
+        TOURNAMENT.paused = false;
+        hideTournamentOverlay();
     }
 
     function start(){
@@ -2421,81 +2170,81 @@
     }
 
     function loop(t){
-         if (!running) return;
-         const dt = clamp((t - lastT) / 1000, 0, 1/30);
-         lastT = t;
+        if (!running) return;
+        const dt = clamp((t - lastT) / 1000, 0, 1/30);
+        lastT = t;
 
-         if (TOURNAMENT.paused){
-             showTournamentOverlay();
-             // Eingaben in Pause ignorieren (lokal); Online-State wird trotzdem gezeigt
-             if (mode !== 'online'){ requestAnimationFrame(loop); return; }
-         }
+        if (TOURNAMENT.paused){
+            showTournamentOverlay();
+            // Eingaben in Pause ignorieren (lokal); Online-State wird trotzdem gezeigt
+            if (mode !== 'online'){ requestAnimationFrame(loop); return; }
+        }
 
-         // If local countdown active, decrement timer here
-         if (localCountdownActive){
-             localCountdown -= dt;
-             if (localCountdown <= 0){
-                 localCountdownActive = false;
-                 localCountdown = 0;
-                 kickoff();
-             }
-         }
+        // If local countdown active, decrement timer here
+        if (localCountdownActive){
+            localCountdown -= dt;
+            if (localCountdown <= 0){
+                localCountdownActive = false;
+                localCountdown = 0;
+                kickoff();
+            }
+        }
 
-         step(dt);
+        step(dt);
 
-         drawField();
-         ball.draw();
-         cars.forEach(c => c.draw());
+        drawField();
+        ball.draw();
+        cars.forEach(c => c.draw());
 
-         // Namen anzeigen (lokal oder online)
-         if (mode === 'online'){
-             cars.forEach((car, idx) => {
-                 const name = NET.playerNames[idx] || ('Spieler ' + (idx+1));
-                 ctx.save();
-                 ctx.globalAlpha = 0.95;
-                 ctx.fillStyle = car.color;
-                 ctx.font = 'bold 13px system-ui';
-                 ctx.textAlign = 'center';
-                 ctx.fillText(name, car.pos.x, car.pos.y - car.r - 28);
-                 ctx.globalAlpha = 1;
-                 ctx.restore();
-             });
-         }
+        // Namen anzeigen (lokal oder online)
+        if (mode === 'online'){
+            cars.forEach((car, idx) => {
+                const name = NET.playerNames[idx] || ('Spieler ' + (idx+1));
+                ctx.save();
+                ctx.globalAlpha = 0.95;
+                ctx.fillStyle = car.color;
+                ctx.font = 'bold 13px system-ui';
+                ctx.textAlign = 'center';
+                ctx.fillText(name, car.pos.x, car.pos.y - car.r - 28);
+                ctx.globalAlpha = 1;
+                ctx.restore();
+            });
+        }
 
-         // Bot-Status im HUD anzeigen
-         if (botStateEl){
-             if (cars[1] && cars[1].isBot){
-                 const m = cars[1].ai?.mode || '';
-                 const e = Math.round(cars[1].energy);
-                 botStateEl.textContent = `Bot: ${botModeLabel(m)} · Energy: ${e}% · commit: ${(cars[1].ai.until.toFixed(3)-lastT.toFixed(3)).toFixed(1)}s`;
-             } else {
-                 botStateEl.textContent = '';
-             }
-         }
+        // Bot-Status im HUD anzeigen
+        if (botStateEl){
+            if (cars[1] && cars[1].isBot){
+                const m = cars[1].ai?.mode || '';
+                const e = Math.round(cars[1].energy);
+                botStateEl.textContent = `Bot: ${botModeLabel(m)} · Energy: ${e}% · commit: ${(cars[1].ai.until.toFixed(3)-lastT.toFixed(3)).toFixed(1)}s`;
+            } else {
+                botStateEl.textContent = '';
+            }
+        }
 
-         // Countdown Overlay aktualisieren
-         if (localCountdownActive){
-             // Lokales Spiel: lokale Countdown
-             updateCountdownRing(localCountdown);
-             showCountdown(localCountdown, 1.5, 'Weiter in');
-         } else if (mode === 'online' && NET.countdownStartAt !== null){
-             // Online Spiel: Client zählt runter basierend auf elapsed time
-             const elapsed = (performance.now() - NET.countdownStartAt) / 1000;
-             const remaining = Math.max(0, 3 - elapsed);
-             if (remaining > 0){
-                 updateCountdownRing(remaining);
-                 showCountdown(remaining, 3, 'Spiel startet in');
-             } else {
-                 // Countdown vorbei
-                 hideCountdown();
-                 NET.countdownStartAt = null;
-             }
-         } else {
-             // Kein Countdown aktiv
-             hideCountdown();
-         }
+        // Countdown Overlay aktualisieren
+        if (localCountdownActive){
+            // Lokales Spiel: lokale Countdown
+            updateCountdownRing(localCountdown);
+            showCountdown(localCountdown, 1.5, 'Weiter in');
+        } else if (mode === 'online' && NET.countdownStartAt !== null){
+            // Online Spiel: Client zählt runter basierend auf elapsed time
+            const elapsed = (performance.now() - NET.countdownStartAt) / 1000;
+            const remaining = Math.max(0, 3 - elapsed);
+            if (remaining > 0){
+                updateCountdownRing(remaining);
+                showCountdown(remaining, 3, 'Spiel startet in');
+            } else {
+                // Countdown vorbei
+                hideCountdown();
+                NET.countdownStartAt = null;
+            }
+        } else {
+            // Kein Countdown aktiv
+            hideCountdown();
+        }
 
-         requestAnimationFrame(loop);
+        requestAnimationFrame(loop);
     }
 
 
@@ -2534,31 +2283,41 @@
         };
     }
 
+    // ---------- Settings Visibility Helper ----------
+    function updateSettingsVisibility(){
+        const btn = document.getElementById('btnSettings');
+        const lo = document.getElementById('localOptions');
+        const on = document.getElementById('onlineOptions');
+        if (!btn) return;
+        const anyVisible = (lo && lo.style.display !== 'none') || (on && on.style.display !== 'none');
+        btn.style.display = anyVisible ? '' : 'none';
+    }
+
     // ---------- UI: Init zweistufige Auswahl ----------
     function initUI(){
-         if (UI_INITIALIZED) return;
-         UI_INITIALIZED = true;
-         const show = id => { const e = document.getElementById(id); if (e) e.style.display = ''; updateSettingsVisibility(); };
-         const hide = id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; updateSettingsVisibility(); };
+        if (UI_INITIALIZED) return;
+        UI_INITIALIZED = true;
+        const show = id => { const e = document.getElementById(id); if (e) e.style.display = ''; updateSettingsVisibility(); };
+        const hide = id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; updateSettingsVisibility(); };
 
-         // Hauptwahl sichtbar, Panels versteckt (sicherstellen)
-         hide('localOptions'); hide('onlineOptions');
+        // Hauptwahl sichtbar, Panels versteckt (sicherstellen)
+        hide('localOptions'); hide('onlineOptions');
 
-         // Choice buttons
-         const bLocal = document.getElementById('btnLocalChoice');
-         const bOnline = document.getElementById('btnOnlineChoice');
-         if (bLocal) bLocal.addEventListener('click', () => { show('localOptions'); hide('onlineOptions'); });
-         if (bOnline) bOnline.addEventListener('click', () => { show('onlineOptions'); hide('localOptions'); });
+        // Choice buttons
+        const bLocal = document.getElementById('btnLocalChoice');
+        const bOnline = document.getElementById('btnOnlineChoice');
+        if (bLocal) bLocal.addEventListener('click', () => { show('localOptions'); hide('onlineOptions'); });
+        if (bOnline) bOnline.addEventListener('click', () => { show('onlineOptions'); hide('localOptions'); });
 
-         // Local action buttons
-         const pvp = document.getElementById('pvp');
-         const pve = document.getElementById('pve');
-         if (pvp) pvp.addEventListener('click', () => { mode = 'pvp'; start(); });
-         if (pve) pve.addEventListener('click', () => { mode = 'pve'; start(); });
+        // Local action buttons
+        const pvp = document.getElementById('pvp');
+        const pve = document.getElementById('pve');
+        if (pvp) pvp.addEventListener('click', () => { mode = 'pvp'; start(); });
+        if (pve) pve.addEventListener('click', () => { mode = 'pve'; start(); });
 
-         // Online Host / Join
-         const onHost = document.getElementById('onHost');
-         if (onHost) onHost.addEventListener('click', async () => {
+        // Online Host / Join
+        const onHost = document.getElementById('onHost');
+        if (onHost) onHost.addEventListener('click', async () => {
             try{
                 NET.pendingAction = 'host';
                 const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
@@ -2568,10 +2327,10 @@
                 wsSend({ type:'create_game_room', maxPlayers: maxP, playerName, settings: getCurrentSettings() });
                 netSetStatus('Relay: Raum wird vorbereitet…');
             }catch(e){ console.warn(e); }
-         });
+        });
 
-         const onJoin = document.getElementById('onJoin');
-         if (onJoin) onJoin.addEventListener('click', async () => {
+        const onJoin = document.getElementById('onJoin');
+        if (onJoin) onJoin.addEventListener('click', async () => {
             const code = (document.getElementById('onCode')?.value || '').trim().toUpperCase();
             if (!code){ netSetStatus('Code fehlt'); return; }
             try{
@@ -2582,27 +2341,33 @@
                 wsSend({ type:'join_game_room', code, playerName });
                 netSetStatus('Relay: Raum wird gesucht…');
             }catch(e){ console.warn(e); }
-         });
+        });
 
-         // initial einmal prüfen
-         updateSettingsVisibility();
-     }
+        // initial einmal prüfen
+        updateSettingsVisibility();
+    }
 
     // create_room/join_room Send bei relay:assigned
     (function wireGameRoomRequests(){
         const sendCreate = () => {
             const maxP = expectedPlayers || 2;
             const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
+            console.log('[Client] Sending create_room to Match-Server:', { maxPlayers: maxP, playerName });
             wsSend({ type:'create_room', maxPlayers: maxP, playerName, settings: getCurrentSettings() });
         };
         const sendJoin = () => {
             const code = (document.getElementById('onCode')?.value || '').trim().toUpperCase();
             const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
-            if (!code) return;
+            if (!code) {
+                console.error('[Client] No room code for join!');
+                return;
+            }
+            console.log('[Client] Sending join_room to Match-Server:', { code, playerName });
             wsSend({ type:'join_room', code, playerName });
         };
         document.addEventListener('relay:assigned', (e) => {
             const kind = e.detail?.kind;
+            console.log('[Client] relay:assigned event received, kind:', kind);
             if (kind === 'host') sendCreate();
             if (kind === 'join') sendJoin();
         });
@@ -2875,16 +2640,15 @@
         try {
             document.body.classList.remove('prefs-open');
             document.getElementById('prefsModal')?.classList.remove('visible');
-            initUI();                 // UI-Events (Lokal/Online) aktivieren
-            showMenu();               // Menü sichtbar
+            initUI();
+            showMenu();
             updateSettingsVisibility();
         } catch(e){ console.warn('UI init failed', e); }
     });
 
-    // Fallback falls DOMContentLoaded verpasst wird (z. B. bei Inline-Script Timing)
     window.addEventListener('load', () => {
         try {
-            if (typeof initUI === 'function') initUI();
+            if (!UI_INITIALIZED) initUI();
             document.body.classList.remove('prefs-open');
             document.getElementById('prefsModal')?.classList.remove('visible');
         } catch(e){}
