@@ -3,8 +3,8 @@ import { WebSocketServer } from "ws";
 import https from "https";
 
 const PORT = process.env.PORT || 8081;
-// Öffentliche WS-URL der Match-Instanz (Railway-Domain des Match-Services)
-const MATCH_WS_URL = process.env.MATCH_WS_URL || "wss://cararena-match.up.railway.app";
+// FIX: Öffentliche WS-URL der Match-Instanz - KORREKTE Railway-Domain
+const MATCH_WS_URL = process.env.MATCH_WS_URL || "wss://cararena-production.up.railway.app";
 
 // Provider-Webhook (z. B. zum Aufwecken/Starten der Instanz)
 // Trage hier deine Wake-URL ein (https://...):
