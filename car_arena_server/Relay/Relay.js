@@ -167,7 +167,8 @@ wss.on("connection", (ws, req) => {
 
     // ====== INSTANZ-MESSAGES ======
     if (msg.type === "instance_online") {
-      instancePort = msg.port || 8080;
+      // FIX: Port immer als Number speichern
+      instancePort = parseInt(msg.port, 10) || 8080;
       ws._host = req?.headers?.host || 'localhost';
       instances.set(instancePort, {
         ws,
@@ -177,7 +178,7 @@ wss.on("connection", (ws, req) => {
         port: instancePort,
         host: ws._host
       });
-      console.log(`[Relay] Instance registered: port ${instancePort}, total instances: ${instances.size}`);
+      console.log(`[Relay] Instance registered: port ${instancePort} (type: ${typeof instancePort}), total instances: ${instances.size}`);
 
       // WICHTIG: Sofort pending clients zuweisen
       flushPendingToInstance(instancePort);
@@ -185,16 +186,19 @@ wss.on("connection", (ws, req) => {
     }
 
     if (msg.type === "instance_ready"){
-      const port = msg.port || instancePort;
+      // FIX: Port immer als Number
+      const port = parseInt(msg.port, 10) || instancePort;
       const inst = instances.get(port);
       if (inst){
         inst.online = true;
         inst.timestamp = Date.now();
         instances.set(port, inst);
-        console.log(`[Relay] Instance ready: port ${port}`);
-        
+        console.log(`[Relay] Instance ready: port ${port} (type: ${typeof port})`);
+
         // Nochmal pending clients zuweisen
         flushPendingToInstance(port);
+      } else {
+        console.log(`[Relay] Instance ready but not found in map: port ${port}`);
       }
       return;
     }

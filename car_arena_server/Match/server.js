@@ -1,7 +1,7 @@
 import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
 
-const PORT = process.env.PORT || 8080;
+const PORT = parseInt(process.env.PORT, 10) || 8080;
 
 // ---------- Helpers (früh definieren, bevor sie genutzt werden) ----------
 function nowMs(){ return Date.now(); }
@@ -692,10 +692,11 @@ function setupRelay(){
   relay.on('open', () => {
      relayConnected = true;
      console.log(`[Match] Connected to Relay, registering on port ${PORT}`);
-     relaySend({ type:'instance_online', port: PORT });
+     // FIX: Port als Number senden, nicht als String
+     relaySend({ type:'instance_online', port: Number(PORT) });
 
      setTimeout(() => {
-       relaySend({ type:'instance_ready', port: PORT, ts: nowMs() });
+       relaySend({ type:'instance_ready', port: Number(PORT), ts: nowMs() });
        console.log(`[Match] Sent instance_ready to Relay`);
      }, 100);
 
