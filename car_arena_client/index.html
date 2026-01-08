@@ -780,9 +780,224 @@
 <script>
     // =============================
     //  Car Ball Arena – v2
-    //  Fokus: direkte Steuerung, echter Boost, smarterer Bot
-    //  Struktur: kleine Engine + Entities => leicht erweiterbar
+    //  BINÄRES NACHRICHTENPROTOKOLL
     // =============================
+
+    // ============================================================
+    // BINÄRES NACHRICHTENFORMAT - CLIENT DOKUMENTATION
+    // ============================================================
+    //
+    // Alle binären Nachrichten beginnen mit einem 1-Byte Message-Type-Header.
+    //
+    // ┌─────────────────────────────────────────────────────────────┐
+    // │ MESSAGE TYPE IDs (1 Byte / Uint8)                           │
+    // ├─────────────────────────────────────────────────────────────┤
+    // │ 0x01 = STATE      (Server → Client, Game State Update)      │
+    // │ 0x02 = INPUT      (Client → Server, Player Input)           │
+    // │ 0x03 = GOAL       (Server → Client, Tor erzielt)            │
+    // │ 0x04 = COUNTDOWN  (Server → Client, Countdown Tick)         │
+    // │ 0x05 = START      (Server → Client, Match gestartet)        │
+    // └─────────────────────────────────────────────────────────────┘
+    //
+    // ============================================================
+    // STATE MESSAGE (0x01) - Server → Client
+    // ============================================================
+    // Für 2 Spieler: 65 Bytes (statt ~400+ Bytes JSON)
+    // Für 4 Spieler: 105 Bytes (statt ~600+ Bytes JSON)
+    //
+    // ┌────────┬────────┬─────────────────────────────────────────┐
+    // │ Offset │ Typ    │ Beschreibung                            │
+    // ├────────┼────────┼─────────────────────────────────────────┤
+    // │ 0      │ Uint8  │ Message Type (0x01)                     │
+    // │ 1      │ Uint32 │ Timestamp (ms)                          │
+    // │ 5      │ Int16  │ Score Team 1 (short, max ±32767)        │
+    // │ 7      │ Int16  │ Score Team 2 (short, max ±32767)        │
+    // │ 9      │ Uint8  │ Player Count                            │
+    // │ 10     │ Uint8  │ Flags: Bit0=started, Bit1=countdown     │
+    // ├────────┼────────┼─────────────────────────────────────────┤
+    // │ 11+i*18│ Float32│ Car[i] Position X                       │
+    // │ 15+i*18│ Float32│ Car[i] Position Y                       │
+    // │ 19+i*18│ Float32│ Car[i] Velocity X                       │
+    // │ 23+i*18│ Float32│ Car[i] Velocity Y                       │
+    // │ 27+i*18│ Int16  │ Car[i] Energy (short, 0-100)            │
+    // ├────────┼────────┼─────────────────────────────────────────┤
+    // │ +0     │ Float32│ Ball Position X                         │
+    // │ +4     │ Float32│ Ball Position Y                         │
+    // │ +8     │ Float32│ Ball Velocity X                         │
+    // │ +12    │ Float32│ Ball Velocity Y                         │
+    // ├────────┼────────┼─────────────────────────────────────────┤
+    // │ last   │ Uint8  │ Countdown Remaining (0-255)             │
+    // └────────┴────────┴─────────────────────────────────────────┘
+    //
+    // ============================================================
+    // INPUT MESSAGE (0x02) - Client → Server
+    // ============================================================
+    // Gesamtgröße: 6 Bytes (statt ~80+ Bytes JSON)
+    //
+    // ┌────────┬────────┬─────────────────────────────────────────┐
+    // │ Offset │ Typ    │ Beschreibung                            │
+    // ├────────┼────────┼─────────────────────────────────────────┤
+    // │ 0      │ Uint8  │ Message Type (0x02)                     │
+    // │ 1      │ Uint8  │ Input Flags (5 Bits genutzt)            │
+    // │        │        │   Bit0 = up                             │
+    // │        │        │   Bit1 = down                           │
+    // │        │        │   Bit2 = left                           │
+    // │        │        │   Bit3 = right                          │
+    // │        │        │   Bit4 = boost                          │
+    // │ 2      │ Uint32 │ Sequence Number                         │
+    // └────────┴────────┴─────────────────────────────────────────┘
+    //
+    // ============================================================
+    // GOAL MESSAGE (0x03) - Server → Client
+    // ============================================================
+    // Gesamtgröße: 6 Bytes
+    //
+    // ┌────────┬────────┬─────────────────────────────────────────┐
+    // │ Offset │ Typ    │ Beschreibung                            │
+    // ├────────┼────────┼─────────────────────────────────────────┤
+    // │ 0      │ Uint8  │ Message Type (0x03)                     │
+    // │ 1      │ Uint8  │ Scorer Index (0 oder 1)                 │
+    // │ 2      │ Int16  │ Score Team 1 (short)                    │
+    // │ 4      │ Int16  │ Score Team 2 (short)                    │
+    // └────────┴────────┴─────────────────────────────────────────┘
+    //
+    // ============================================================
+    // COUNTDOWN MESSAGE (0x04) - Server → Client
+    // ============================================================
+    // Gesamtgröße: 2 Bytes
+    //
+    // ┌────────┬────────┬─────────────────────────────────────────┐
+    // │ Offset │ Typ    │ Beschreibung                            │
+    // ├────────┼────────┼─────────────────────────────────────────┤
+    // │ 0      │ Uint8  │ Message Type (0x04)                     │
+    // │ 1      │ Uint8  │ Countdown Remaining                     │
+    // └────────┴────────┴─────────────────────────────────────────┘
+    //
+    // ============================================================
+
+    const MSG_TYPE = {
+        STATE: 0x01,
+        INPUT: 0x02,
+        GOAL: 0x03,
+        COUNTDOWN: 0x04,
+        START: 0x05,
+    };
+
+    // Binäre Input-Nachricht erstellen
+    function createBinaryInput(input, seq) {
+        const buffer = new ArrayBuffer(6);
+        const view = new DataView(buffer);
+
+        view.setUint8(0, MSG_TYPE.INPUT);
+
+        let flags = 0;
+        if (input.up) flags |= 0x01;
+        if (input.down) flags |= 0x02;
+        if (input.left) flags |= 0x04;
+        if (input.right) flags |= 0x08;
+        if (input.boost) flags |= 0x10;
+        view.setUint8(1, flags);
+
+        view.setUint32(2, seq, true); // Little Endian
+
+        return buffer;
+    }
+
+    // Binäre State-Nachricht parsen
+    function parseBinaryState(buffer) {
+        const view = new DataView(buffer);
+        let offset = 0;
+
+        const msgType = view.getUint8(offset); offset += 1;
+        if (msgType !== MSG_TYPE.STATE) return null;
+
+        const timestamp = view.getUint32(offset, true); offset += 4;
+        const score0 = view.getInt16(offset, true); offset += 2;  // Int16 = short
+        const score1 = view.getInt16(offset, true); offset += 2;  // Int16 = short
+        const playerCount = view.getUint8(offset); offset += 1;
+        const flags = view.getUint8(offset); offset += 1;
+
+        const started = !!(flags & 0x01);
+        const hasCountdown = !!(flags & 0x02);
+
+        const cars = [];
+        const energy = [];
+        for (let i = 0; i < playerCount; i++) {
+            cars.push({
+                x: view.getFloat32(offset, true),
+                y: view.getFloat32(offset + 4, true),
+                vx: view.getFloat32(offset + 8, true),
+                vy: view.getFloat32(offset + 12, true)
+            });
+            energy.push(view.getInt16(offset + 16, true));  // Int16 = short
+            offset += 18;
+        }
+
+        const ball = {
+            x: view.getFloat32(offset, true),
+            y: view.getFloat32(offset + 4, true),
+            vx: view.getFloat32(offset + 8, true),
+            vy: view.getFloat32(offset + 12, true)
+        };
+        offset += 16;
+
+        const countdown = view.getUint8(offset);
+
+        return {
+            type: 'state',
+            t: timestamp,
+            score: [score0, score1],
+            car: cars,
+            ball: ball,
+            energy: energy,
+            started: started,
+            countdown: countdown
+        };
+    }
+
+    // Binäre Goal-Nachricht parsen
+    function parseBinaryGoal(buffer) {
+        const view = new DataView(buffer);
+        if (view.getUint8(0) !== MSG_TYPE.GOAL) return null;
+
+        return {
+            type: 'goal',
+            scorer: view.getUint8(1),
+            score: [
+                view.getInt16(2, true),  // Int16 = short
+                view.getInt16(4, true)   // Int16 = short
+            ]
+        };
+    }
+
+    // Binäre Countdown-Nachricht parsen
+    function parseBinaryCountdown(buffer) {
+        const view = new DataView(buffer);
+        if (view.getUint8(0) !== MSG_TYPE.COUNTDOWN) return null;
+
+        return {
+            type: 'countdown_tick',
+            remaining: view.getUint8(1)
+        };
+    }
+
+    // Binäre Nachricht parsen (Dispatcher)
+    function parseBinaryMessage(buffer) {
+        if (buffer.byteLength < 1) return null;
+        const view = new DataView(buffer);
+        const msgType = view.getUint8(0);
+
+        switch (msgType) {
+            case MSG_TYPE.STATE:
+                return parseBinaryState(buffer);
+            case MSG_TYPE.GOAL:
+                return parseBinaryGoal(buffer);
+            case MSG_TYPE.COUNTDOWN:
+                return parseBinaryCountdown(buffer);
+            default:
+                return null;
+        }
+    }
 
     // Chat-System
     const CHAT = {
@@ -971,6 +1186,13 @@
         }
     }
 
+    // NEU: Binär senden
+    function wsSendBinary(buffer){
+        if (NET.ws && NET.ws.readyState === 1){
+            try{ NET.ws.send(buffer); }catch(e){ console.error('[Binary Send Error]', e); }
+        }
+    }
+
     function netSetStatus(txt){
         const el = document.getElementById('onStatus');
         if (el) el.textContent = 'Status: ' + txt;
@@ -1023,11 +1245,11 @@
             relayWs.onopen = () => {
                 console.log('[Client] Relay WebSocket opened');
                 netSetStatus('Relay: Verbunden');
-                // Sende player_connect sofort nach Verbindung
                 relayWs.send(JSON.stringify({ type: 'player_connect', playerId: NET.playerId }));
             };
 
             relayWs.onmessage = (ev) => {
+                // ...existing relay message handling...
                 let msg;
                 try { msg = JSON.parse(ev.data); } catch { return; }
                 console.log('[Client] Relay message received:', msg.type, msg);
@@ -1069,12 +1291,12 @@
 
                 if (msg.type === 'assign_instance'){
                     const wsUrl = msg.wsUrl || `wss://cararena-match.up.railway.app/`;
-                    console.log('[Client] Assigned to Match-Server:', wsUrl, 'kind:', msg.kind, 'port:', msg.port);
+                    console.log('[Client] Assigned to Match-Server:', wsUrl);
                     netSetStatus('Game-Server: Verbinden…');
                     relayWs.close();
 
-                    console.log('[Client] Connecting to Match-Server:', wsUrl);
                     const gameWs = new WebSocket(wsUrl);
+                    gameWs.binaryType = 'arraybuffer';  // WICHTIG: Binäre Nachrichten empfangen
                     NET.ws = gameWs;
 
                     gameWs.onopen = () => {
@@ -1090,19 +1312,14 @@
                             }, 1500);
                         }
 
-                        // Sende create_room oder join_room an Match-Server
                         const kind = msg.kind || NET.pendingAction || 'host';
-                        console.log('[Client] Sending room request to Match-Server, kind:', kind);
-
                         if (kind === 'host'){
                             const maxP = expectedPlayers || 2;
                             const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
-                            console.log('[Client] Sending create_room:', { maxPlayers: maxP, playerName });
                             wsSend({ type:'create_room', maxPlayers: maxP, playerName, settings: getCurrentSettings() });
                         } else if (kind === 'join'){
                             const code = (document.getElementById('onCode')?.value || '').trim().toUpperCase();
                             const playerName = (document.getElementById('onPlayerName')?.value || 'Player').trim() || 'Player';
-                            console.log('[Client] Sending join_room:', { code, playerName });
                             wsSend({ type:'join_room', code, playerName });
                         }
 
@@ -1110,18 +1327,28 @@
                     };
                     gameWs.onclose = () => {
                         NET.connected = false;
-                        console.log('[Client] Match-Server WebSocket closed');
                         netSetStatus('Game-Server: Getrennt');
                     };
                     gameWs.onerror = (err) => {
                         NET.connected = false;
-                        console.error('[Client] Match-Server WebSocket error:', err);
                         netSetStatus('Game-Server: Fehler');
                     };
                     gameWs.onmessage = (ev2) => {
+                        // BINÄR oder JSON?
+                        if (ev2.data instanceof ArrayBuffer) {
+                            const parsed = parseBinaryMessage(ev2.data);
+                            if (parsed) {
+                                handleGameMessage(parsed);
+                            }
+                            return;
+                        }
+
+                        // JSON Fallback
                         let gameMsg;
                         try { gameMsg = JSON.parse(ev2.data); } catch { return; }
-                        console.log('[Client] Match-Server message:', gameMsg.type, gameMsg);
+                        if (gameMsg.type !== 'state' && gameMsg.type !== 'pong') {
+                            console.log('[Client] Match-Server message:', gameMsg.type, gameMsg);
+                        }
                         handleGameMessage(gameMsg);
                     };
                     return;
@@ -1408,15 +1635,17 @@
     function netStartSending(){
         if (NET.sendTimer) clearInterval(NET.sendTimer);
         NET.sendTimer = setInterval(() => {
-            if (mode !== 'online' || !NET.connected || NET.playerIndex === null) return; // Viewer sendet nichts
+            if (mode !== 'online' || !NET.connected || NET.playerIndex === null) return;
             NET.seq++;
             const input = netLocalInput();
-            wsSend({ type:'input', input:{...input, seq: NET.seq }});
+
+            // BINÄR senden statt JSON!
+            const binaryInput = createBinaryInput(input, NET.seq);
+            wsSendBinary(binaryInput);
         }, 16);
     }
 
     function applyServerState(msg){
-        // Server nutzt dieselben Pixel-Koordinaten wie das Canvas.
         if (!msg) return;
         if (msg.score){
             score = msg.score;
@@ -1429,15 +1658,15 @@
             ball.vel.x = msg.ball.vx || 0;
             ball.vel.y = msg.ball.vy || 0;
         }
-        // Namen vom Server übernehmen (Array)
+        // Namen vom Server (werden bei binären State-Messages nicht übertragen,
+        // aber bei join_ok/player_joined schon)
         if (msg.playerNames && typeof msg.playerNames === 'object'){
             NET.playerNames = msg.playerNames;
         }
-        // Lobby/Match status vom Server (optional)
         NET.serverStarted = !!msg.started;
-        NET.serverCountdown = (typeof msg.countdown === 'number') ? msg.countdown : (msg.countdown === undefined ? undefined : Number(msg.countdown));
+        NET.serverCountdown = (typeof msg.countdown === 'number') ? msg.countdown : undefined;
+
         if (msg.car && Array.isArray(msg.car)){
-            // stelle sicher, dass lokale Anzeige genug Cars hat
             if (cars.length < msg.car.length){
                 const add = msg.car.length - cars.length;
                 for (let k=0;k<add;k++){
@@ -1461,6 +1690,7 @@
                 cars[i].vel.x = msg.car[i].vx || 0;
                 cars[i].vel.y = msg.car[i].vy || 0;
             }
+            // Energy aus binärer Nachricht
             if (Array.isArray(msg.energy)){
                 for (let i=0;i<msg.energy.length && i<cars.length;i++){
                     if (msg.energy[i] !== undefined) cars[i].energy = msg.energy[i];
