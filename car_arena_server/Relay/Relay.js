@@ -163,7 +163,10 @@ wss.on("connection", (ws, req) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
 
-    console.log(`[Relay] Message from ${clientId}:`, msg.type, msg);
+    // FIX: Nur wichtige Messages loggen, NICHT heartbeat/ping
+    if (msg.type !== 'instance_heartbeat' && msg.type !== 'ping' && msg.type !== 'pong') {
+      console.log(`[Relay] Message from ${clientId}:`, msg.type, msg);
+    }
 
     // ====== INSTANZ-MESSAGES ======
     if (msg.type === "instance_online") {

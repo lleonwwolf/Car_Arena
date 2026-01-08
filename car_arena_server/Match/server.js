@@ -360,9 +360,216 @@ function stepRoom(room, dt){
   }
 }
 
+// ============================================================
+// BINÄRES NACHRICHTENFORMAT - DOKUMENTATION
+// ============================================================
+//
+// Alle binären Nachrichten beginnen mit einem 1-Byte Message-Type-Header.
+//
+// ┌─────────────────────────────────────────────────────────────┐
+// │ MESSAGE TYPE IDs (1 Byte / Uint8)                           │
+// ├─────────────────────────────────────────────────────────────┤
+// │ 0x01 = STATE      (Server → Client, Game State Update)      │
+// │ 0x02 = INPUT      (Client → Server, Player Input)           │
+// │ 0x03 = GOAL       (Server → Client, Tor erzielt)            │
+// │ 0x04 = COUNTDOWN  (Server → Client, Countdown Tick)         │
+// │ 0x05 = START      (Server → Client, Match gestartet)        │
+// ├─────────────────────────────────────────────────────────────┤
+// │ JSON-Fallback: Nachrichten ohne binäres Format werden       │
+// │ weiterhin als JSON gesendet (z.B. chat, room_created, etc.) │
+// └─────────────────────────────────────────────────────────────┘
+//
+// ============================================================
+// STATE MESSAGE (0x01) - Server → Client
+// ============================================================
+// Gesamtgröße: 1 + 4 + 2 + 2 + 2 + (maxPlayers * 18) + 12 + (maxPlayers * 2) + 1 + 1
+// Für 2 Spieler: 1 + 4 + 2 + 2 + 2 + 36 + 12 + 4 + 1 + 1 = 65 Bytes
+// Für 4 Spieler: 1 + 4 + 2 + 2 + 2 + 72 + 12 + 8 + 1 + 1 = 105 Bytes
+//
+// ┌────────┬────────┬─────────────────────────────────────────┐
+// │ Offset │ Typ    │ Beschreibung                            │
+// ├────────┼────────┼─────────────────────────────────────────┤
+// │ 0      │ Uint8  │ Message Type (0x01)                     │
+// │ 1      │ Uint32 │ Timestamp (ms, lower 32 bits)           │
+// │ 5      │ Int16  │ Score Team 1 (Blau)                     │
+// │ 7      │ Int16  │ Score Team 2 (Rot)                      │
+// │ 9      │ Uint8  │ Player Count (maxPlayers)               │
+// │ 10     │ Uint8  │ Flags: Bit0=started, Bit1=countdown>0   │
+// ├────────┼────────┼─────────────────────────────────────────┤
+// │        │        │ *** CAR DATA (pro Spieler, 18 Bytes) ***│
+// │ 11+i*18│ Float32│ Car[i] Position X                       │
+// │ 15+i*18│ Float32│ Car[i] Position Y                       │
+// │ 19+i*18│ Float32│ Car[i] Velocity X                       │
+// │ 23+i*18│ Float32│ Car[i] Velocity Y                       │
+// │ 27+i*18│ Int16  │ Car[i] Energy (0-100, als Int16)        │
+// ├────────┼────────┼─────────────────────────────────────────┤
+// │        │        │ *** BALL DATA (12 Bytes) ***            │
+// │ 11+n*18│ Float32│ Ball Position X                         │
+// │ 15+n*18│ Float32│ Ball Position Y                         │
+// │ 19+n*18│ Float32│ Ball Velocity X                         │
+// │ 23+n*18│ Float32│ Ball Velocity Y                         │
+// ├────────┼────────┼─────────────────────────────────────────┤
+// │        │        │ *** Optional: Countdown (1 Byte) ***    │
+// │ last   │ Uint8  │ Countdown Remaining (0-255 Sekunden)    │
+// └────────┴────────┴─────────────────────────────────────────┘
+//
+// ============================================================
+// INPUT MESSAGE (0x02) - Client → Server
+// ============================================================
+// Gesamtgröße: 6 Bytes
+//
+// ┌────────┬────────┬─────────────────────────────────────────┐
+// │ Offset │ Typ    │ Beschreibung                            │
+// ├────────┼────────┼─────────────────────────────────────────┤
+// │ 0      │ Uint8  │ Message Type (0x02)                     │
+// │ 1      │ Uint8  │ Input Flags:                            │
+// │        │        │   Bit0 = up                             │
+// │        │        │   Bit1 = down                           │
+// │        │        │   Bit2 = left                           │
+// │        │        │   Bit3 = right                          │
+// │        │        │   Bit4 = boost                          │
+// │ 2      │ Uint32 │ Sequence Number                         │
+// └────────┴────────┴─────────────────────────────────────────┘
+//
+// ============================================================
+// GOAL MESSAGE (0x03) - Server → Client
+// ============================================================
+// Gesamtgröße: 6 Bytes
+//
+// ┌────────┬────────┬─────────────────────────────────────────┐
+// │ Offset │ Typ    │ Beschreibung                            │
+// ├────────┼────────┼─────────────────────────────────────────┤
+// │ 0      │ Uint8  │ Message Type (0x03)                     │
+// │ 1      │ Uint8  │ Scorer Index (0=links, 1=rechts)        │
+// │ 2      │ Int16  │ Score Team 1 (Blau)                     │
+// │ 4      │ Int16  │ Score Team 2 (Rot)                      │
+// └────────┴────────┴─────────────────────────────────────────┘
+//
+// ============================================================
+// COUNTDOWN MESSAGE (0x04) - Server → Client
+// ============================================================
+// Gesamtgröße: 2 Bytes
+//
+// ┌────────┬────────┬─────────────────────────────────────────┐
+// │ Offset │ Typ    │ Beschreibung                            │
+// ├────────┼────────┼─────────────────────────────────────────┤
+// │ 0      │ Uint8  │ Message Type (0x04)                     │
+// │ 1      │ Uint8  │ Countdown Remaining (Sekunden)          │
+// └────────┴────────┴─────────────────────────────────────────┘
+//
+// ============================================================
+
+const MSG_TYPE = {
+  STATE: 0x01,
+  INPUT: 0x02,
+  GOAL: 0x03,
+  COUNTDOWN: 0x04,
+  START: 0x05,
+};
+
+// Binäre State-Nachricht erstellen
+function createBinaryState(room) {
+  const playerCount = room.maxPlayers;
+  // Header: 1 + 4 + 2 + 2 + 1 + 1 = 11 Bytes
+  // Cars: playerCount * 18 Bytes
+  // Ball: 16 Bytes (4 floats)
+  // Countdown: 1 Byte
+  const size = 11 + (playerCount * 18) + 16 + 1;
+  const buffer = Buffer.alloc(size);
+  let offset = 0;
+
+  // Message Type
+  buffer.writeUInt8(MSG_TYPE.STATE, offset); offset += 1;
+
+  // Timestamp (lower 32 bits)
+  buffer.writeUInt32LE(nowMs() & 0xFFFFFFFF, offset); offset += 4;
+
+  // Scores als Int16 (short)
+  buffer.writeInt16LE(room.score[0], offset); offset += 2;
+  buffer.writeInt16LE(room.score[1], offset); offset += 2;
+
+  // Player Count
+  buffer.writeUInt8(playerCount, offset); offset += 1;
+
+  // Flags: Bit0=started, Bit1=countdownActive
+  let flags = 0;
+  if (room.started) flags |= 0x01;
+  if (room.countdownRemaining > 0) flags |= 0x02;
+  buffer.writeUInt8(flags, offset); offset += 1;
+
+  // Car Data (pro Spieler: 4+4+4+4+2 = 18 Bytes)
+  for (let i = 0; i < playerCount; i++) {
+    const car = room.car[i];
+    buffer.writeFloatLE(car.p.x, offset); offset += 4;
+    buffer.writeFloatLE(car.p.y, offset); offset += 4;
+    buffer.writeFloatLE(car.v.x, offset); offset += 4;
+    buffer.writeFloatLE(car.v.y, offset); offset += 4;
+    // Energy als Int16 (0-100, passt locker)
+    buffer.writeInt16LE(Math.round(room.energy[i]), offset); offset += 2;
+  }
+
+  // Ball Data (16 Bytes)
+  buffer.writeFloatLE(room.ball.p.x, offset); offset += 4;
+  buffer.writeFloatLE(room.ball.p.y, offset); offset += 4;
+  buffer.writeFloatLE(room.ball.v.x, offset); offset += 4;
+  buffer.writeFloatLE(room.ball.v.y, offset); offset += 4;
+
+  // Countdown (1 Byte)
+  buffer.writeUInt8(room.countdownRemaining, offset); offset += 1;
+
+  return buffer;
+}
+
+// Binäre Goal-Nachricht erstellen
+function createBinaryGoal(scorer, score) {
+  const buffer = Buffer.alloc(6);
+  buffer.writeUInt8(MSG_TYPE.GOAL, 0);
+  buffer.writeUInt8(scorer, 1);
+  buffer.writeInt16LE(score[0], 2);
+  buffer.writeInt16LE(score[1], 4);
+  return buffer;
+}
+
+// Binäre Countdown-Nachricht erstellen
+function createBinaryCountdown(remaining) {
+  const buffer = Buffer.alloc(2);
+  buffer.writeUInt8(MSG_TYPE.COUNTDOWN, 0);
+  buffer.writeUInt8(remaining, 1);
+  return buffer;
+}
+
+// Binäre Input-Nachricht parsen
+function parseBinaryInput(buffer) {
+  if (buffer.length < 6) return null;
+  const type = buffer.readUInt8(0);
+  if (type !== MSG_TYPE.INPUT) return null;
+
+  const flags = buffer.readUInt8(1);
+  const seq = buffer.readUInt32LE(2);
+
+  return {
+    up: !!(flags & 0x01),
+    down: !!(flags & 0x02),
+    left: !!(flags & 0x04),
+    right: !!(flags & 0x08),
+    boost: !!(flags & 0x10),
+    seq: seq
+  };
+}
+
+// Binär senden (für State/Goal/Countdown)
+function sendBinary(ws, buffer) {
+  if (ws.readyState === 1) ws.send(buffer);
+}
+
+// Broadcast binär an alle Clients im Raum
+function broadcastBinaryRoom(room, buffer) {
+  for (const ws of room.clients) sendBinary(ws, buffer);
+}
+
 function snapshot(room){
-  // back to full precision for smooth gameplay
-  // WICHTIG: cfgPartial NICHT mehr senden – nur beim Start
+  // HINWEIS: Diese Funktion wird jetzt nur noch für Debug/Fallback genutzt.
+  // Das binäre Format wird direkt im Game Loop verwendet.
   return {
     type: "state",
     t: nowMs(),
@@ -390,16 +597,47 @@ wss.on("connection", (ws) => {
   ws.playerIndex = null;
   ws.role = 'viewer';
   ws.isAlive = true;
+  ws.binaryType = 'arraybuffer'; // Wichtig für binäre Nachrichten
 
   console.log(`[Match] New WebSocket connection`);
 
   ws.on("pong", () => { ws.isAlive = true; });
 
-  ws.on("message", (raw) => {
+  ws.on("message", (raw, isBinary) => {
+    // Binäre Nachrichten verarbeiten
+    if (isBinary || Buffer.isBuffer(raw)) {
+      const buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+      if (buffer.length >= 1) {
+        const msgType = buffer.readUInt8(0);
+
+        // Binärer Input
+        if (msgType === MSG_TYPE.INPUT) {
+          const code = ws.roomCode;
+          const idx = ws.playerIndex;
+          if (!code) return;
+          const room = rooms.get(code);
+          if (!room) return;
+          if (ws.role !== 'player') return;
+          if (!room.started) return;
+
+          const inp = parseBinaryInput(buffer);
+          if (inp) {
+            room.input[idx] = inp;
+          }
+          return;
+        }
+      }
+      return;
+    }
+
+    // JSON-Nachrichten (Fallback)
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
 
-    console.log(`[Match] Message received:`, msg.type, msg);
+    // FIX: Nur wichtige Messages loggen, NICHT input/ping/pong
+    if (msg.type !== 'input' && msg.type !== 'ping' && msg.type !== 'pong') {
+      console.log(`[Match] Message received:`, msg.type, msg);
+    }
 
     if (msg.type === "ping"){
       const t = (typeof msg.t === 'number') ? msg.t : Date.now();
@@ -787,7 +1025,7 @@ function tryStartCountdown(room){
   console.log(`[Match] Countdown started for room ${room.code}`);
 }
 
-// Game Loop
+// Game Loop - BINÄRE STATE-NACHRICHTEN
 let last = nowMs();
 setInterval(() => {
   const t = nowMs();
@@ -805,7 +1043,6 @@ setInterval(() => {
         room.countdownLastTick = t;
         
         if (room.countdownRemaining <= 0){
-          // Match starten!
           room.started = true;
           resetKickoff(room);
           broadcastRoom(room, {
@@ -825,11 +1062,8 @@ setInterval(() => {
           });
           console.log(`[Match] Match started in room ${room.code}`);
         } else {
-          // Weiter countdown broadcasten
-          broadcastRoom(room, { 
-            type:'countdown_tick', 
-            remaining: room.countdownRemaining 
-          });
+          // BINÄR: Countdown-Tick senden
+          broadcastBinaryRoom(room, createBinaryCountdown(room.countdownRemaining));
         }
       }
     }
@@ -841,7 +1075,8 @@ setInterval(() => {
     const snapEvery = 1000 / CFG.snapHz;
     if (t - room.lastSnap >= snapEvery){
       room.lastSnap = t;
-      broadcastRoom(room, snapshot(room));
+      // BINÄR: State-Nachricht senden (statt JSON)
+      broadcastBinaryRoom(room, createBinaryState(room));
     }
 
     if (room.tournament && room.tournament.enabled && room.tournamentPauseUntil){
