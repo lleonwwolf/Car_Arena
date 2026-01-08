@@ -916,6 +916,7 @@ const RELAY_URL = process.env.RELAY_URL || "wss://cararena-relay.up.railway.app/
 let relay = null;
 let relayConnected = false;
 let relayReconnectTimer = null;
+let relayHeartbeatTimer = null;  // NEU: Heartbeat Timer
 
 function relaySend(obj){
   try { if (relay && relayConnected) relay.send(JSON.stringify(obj)); } catch(e){ console.error('[Server] relaySend error:', e.message); }
@@ -925,18 +926,37 @@ function setupRelay(){
   if (!RELAY_URL) return;
   console.log(`[Match] Connecting to Relay: ${RELAY_URL}`);
 
-  relay = new WebSocket(RELAY_URL);
+  try {
+    relay = new WebSocket(RELAY_URL);
+  } catch (e) {
+    console.error(`[Match] Failed to create WebSocket to Relay:`, e.message);
+    scheduleRelayReconnect();
+    return;
+  }
 
   relay.on('open', () => {
-     relayConnected = true;
-     console.log(`[Match] Connected to Relay, registering on port ${PORT}`);
-     // FIX: Port als Number senden, nicht als String
-     relaySend({ type:'instance_online', port: Number(PORT) });
+    relayConnected = true;
+    console.log(`[Match] Connected to Relay successfully!`);
+    console.log(`[Match] Registering instance on port ${PORT} (type: ${typeof PORT})`);
+    
+    // Sofort registrieren
+    relaySend({ type:'instance_online', port: Number(PORT) });
 
-     setTimeout(() => {
-       relaySend({ type:'instance_ready', port: Number(PORT), ts: nowMs() });
-       console.log(`[Match] Sent instance_ready to Relay`);
-     }, 100);
+    // Nach kurzer Verzögerung "ready" senden
+    setTimeout(() => {
+      if (relayConnected) {
+        relaySend({ type:'instance_ready', port: Number(PORT), ts: nowMs() });
+        console.log(`[Match] Sent instance_ready to Relay`);
+      }
+    }, 200);
+
+    // NEU: Heartbeat alle 20 Sekunden senden, damit Relay weiß dass wir leben
+    if (relayHeartbeatTimer) clearInterval(relayHeartbeatTimer);
+    relayHeartbeatTimer = setInterval(() => {
+      if (relayConnected) {
+        relaySend({ type:'instance_heartbeat', port: Number(PORT), ts: nowMs(), rooms: rooms.size });
+      }
+    }, 20000);
 
     if (relayReconnectTimer) {
       clearTimeout(relayReconnectTimer);
@@ -944,59 +964,70 @@ function setupRelay(){
     }
   });
 
-  relay.on('close', () => {
-    console.log('[Match] Relay connection closed, reconnecting in 5s...');
+  relay.on('close', (code, reason) => {
+    console.log(`[Match] Relay connection closed (code: ${code}, reason: ${reason || 'none'})`);
     relayConnected = false;
-    if (!relayReconnectTimer) {
-      relayReconnectTimer = setTimeout(() => {
-        console.log('[Match] Attempting Relay reconnect...');
-        setupRelay();
-      }, 5000);
+    if (relayHeartbeatTimer) {
+      clearInterval(relayHeartbeatTimer);
+      relayHeartbeatTimer = null;
     }
+    scheduleRelayReconnect();
   });
 
   relay.on('error', (err) => {
-    console.error('[Match] Relay error:', err.message);
+    console.error('[Match] Relay WebSocket error:', err.message);
+    // Nicht hier reconnecten - 'close' wird danach gefeuert
   });
 
   relay.on('message', (raw) => {
-     // FIX: ws library sendet Buffer, nicht MessageEvent
-     let msg; 
-     try{ 
-       const data = (typeof raw === 'string') ? raw : raw.toString();
-       msg = JSON.parse(data); 
-     }catch{ return; }
+    let msg; 
+    try{ 
+      const data = (typeof raw === 'string') ? raw : raw.toString();
+      msg = JSON.parse(data); 
+    }catch{ return; }
 
-     if (msg.type === 'tournament_match_assign'){
-       const tournId = msg.tournamentId;
-       const matchId = msg.matchId;
-       const maxP = clamp(msg.maxPlayers || 2, 2, 4);
-       const room = createRoom(maxP, msg.settings || null);
+    console.log(`[Match] Relay message received:`, msg.type);
 
-       room.tournamentInfo = {
-         id: tournId,
-         matchId: matchId,
-         relayConnected: true
-       };
+    if (msg.type === 'tournament_match_assign'){
+      const tournId = msg.tournamentId;
+      const matchId = msg.matchId;
+      const maxP = clamp(msg.maxPlayers || 2, 2, 4);
+      const room = createRoom(maxP, msg.settings || null);
 
-       if (Array.isArray(msg.playerNames)){
-         for (let i=0;i<Math.min(msg.playerNames.length, room.maxPlayers); i++){
-           room.playerNames[i] = String(msg.playerNames[i] || '').slice(0,20);
-         }
-       }
+      room.tournamentInfo = {
+        id: tournId,
+        matchId: matchId,
+        relayConnected: true
+      };
 
-       if (msg.tournament && typeof msg.tournament === 'object'){
-         room.tournament.enabled = true;
-         room.tournament.mode = msg.tournament.mode;
-         room.tournament.config = msg.tournament.config;
-         room.tournament.phase = msg.tournament.phase;
-       }
+      if (Array.isArray(msg.playerNames)){
+        for (let i=0;i<Math.min(msg.playerNames.length, room.maxPlayers); i++){
+          room.playerNames[i] = String(msg.playerNames[i] || '').slice(0,20);
+        }
+      }
 
-       resetKickoff(room);
-       console.log(`[Match] Tournament match assigned: ${matchId} in room ${room.code}`);
-       relaySend({ type:'match_assigned_ok', matchId, code: room.code, port: PORT });
-     }
+      if (msg.tournament && typeof msg.tournament === 'object'){
+        room.tournament.enabled = true;
+        room.tournament.mode = msg.tournament.mode;
+        room.tournament.config = msg.tournament.config;
+        room.tournament.phase = msg.tournament.phase;
+      }
+
+      resetKickoff(room);
+      console.log(`[Match] Tournament match assigned: ${matchId} in room ${room.code}`);
+      relaySend({ type:'match_assigned_ok', matchId, code: room.code, port: PORT });
+    }
   });
+}
+
+function scheduleRelayReconnect() {
+  if (relayReconnectTimer) return; // Bereits geplant
+  console.log('[Match] Scheduling Relay reconnect in 5s...');
+  relayReconnectTimer = setTimeout(() => {
+    relayReconnectTimer = null;
+    console.log('[Match] Attempting Relay reconnect...');
+    setupRelay();
+  }, 5000);
 }
 
 // ---------- Lobby start helper ----------
@@ -1109,5 +1140,6 @@ setupRelay();
 
 server.listen(PORT, () => {
   console.log(`[Match] Server listening on port ${PORT}`);
+  console.log(`[Match] Will connect to Relay at: ${RELAY_URL}`);
 });
 
